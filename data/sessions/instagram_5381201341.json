@@ -1,25 +1,25 @@
 {
     "uuids": {
-        "phone_id": "2022305b-740d-4cc9-8f7f-49477cbd9acc",
-        "uuid": "77ffba7f-8491-498a-8a27-1790810d51ac",
-        "client_session_id": "7f16c749-0c0f-479b-aaa5-7d6d528e13da",
-        "advertising_id": "e16b7ae1-5f64-450c-a174-7563bffac67f",
-        "android_device_id": "android-b4a6af580d71aab5",
-        "request_id": "8b58e877-576f-4b1a-bf72-b1425fd9b1cc",
-        "tray_session_id": "9fd095ff-cc95-440b-8343-cec04e70708d"
+        "phone_id": "32cc6d47-9edf-44f7-9f27-f448b20895e2",
+        "uuid": "5821e785-2734-435f-bbbe-bc4c944afe89",
+        "client_session_id": "2777992b-4de5-4546-a894-c361a5461d9d",
+        "advertising_id": "bd20776e-57a6-4c45-9e0d-9fffd541fee0",
+        "android_device_id": "android-24dce18eeaef9c99",
+        "request_id": "9d89b504-b2d7-4995-8ba5-0f6bcb03b325",
+        "tray_session_id": "c83923ca-bd76-446a-84f8-af83a8e39de1"
     },
     "mid": null,
     "ig_u_rur": null,
     "ig_www_claim": null,
     "authorization_data": {
-        "ds_user_id": "33057208157",
-        "sessionid": "33057208157%3Al2h5EdpUSOTit8%3A15%3AAYn-fxH45bq--eOxoss9Q3J2dcjzxttTK6sVXA_iKw",
+        "ds_user_id": "20008567515",
+        "sessionid": "20008567515:UBI9RgWjuL4WdN:25:AYlii9aC0BtyWyBtkB8OygEEfcXkQLkQLZiPBxqhVA",
         "should_use_header_over_cookies": true
     },
     "cookies": {
-        "sessionid": "33057208157%3Al2h5EdpUSOTit8%3A15%3AAYn-fxH45bq--eOxoss9Q3J2dcjzxttTK6sVXA_iKw",
-        "ds_user_id": "33057208157",
-        "rur": "TTX%2C17841432884732151%2C1791179508%3A01ffefef3fd221d28cf74ca25a4dc01d2b5349e18f4b7ba60a5fffba460a8a486e6bbd03"
+        "sessionid": "20008567515:UBI9RgWjuL4WdN:25:AYlii9aC0BtyWyBtkB8OygEEfcXkQLkQLZiPBxqhVA",
+        "ds_user_id": "20008567515",
+        "rur": "KND%2C17841420145461070%2C1791914144%3A01ffd2aa7db612a2adbc74b87f9d5221fc14150638d101494066fa09d307bbd700716ca1"
     },
     "last_login": null,
     "device_settings": {
@@ -35,12 +35,12 @@
         "version_code": "385211303",
         "bloks_versioning_id": "935a519904e9017324cdedb64a283a3c2c1a3d5b0bbc698b451f5aef72cc11df"
     },
-    "user_agent": "Instagram 446.0.0.49.77 Android (34/14; 480dpi; 1344x2992; Google/google; Pixel 8 Pro; husky; husky; en_IN; 385211303)",
-    "country": "IN",
-    "country_code": 91,
-    "locale": "en_IN",
-    "timezone_offset": 19800,
-    "timezone_name": "GMT+05:30",
+    "user_agent": "Instagram 446.0.0.49.77 Android (34/14; 480dpi; 1344x2992; Google/google; Pixel 8 Pro; husky; husky; en_US; 385211303)",
+    "country": "US",
+    "country_code": 1,
+    "locale": "en_US",
+    "timezone_offset": -14400,
+    "timezone_name": "GMT-04:00",
     "push_disabled": true,
     "request_timeout": 1,
     "public_request_retries_count": 3,

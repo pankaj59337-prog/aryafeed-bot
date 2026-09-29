@@ -302,19 +302,27 @@ async def setup_bot() -> Application:
     # 2. Initialize SQLite database
     await db_manager.init_db()
 
-    # Ensure @night_thought_12 is registered in DB if session file exists
+    # Ensure @aryafeed.in is registered in DB if session file exists
     try:
-        session_file = session_dir / "instagram_5381201341.json"
+        target_chat_id = config.admin_telegram_id or 5381201341
+        session_file = session_dir / f"instagram_{target_chat_id}.json"
         if session_file.exists():
-            import aiosqlite
-            async with aiosqlite.connect(config.database_path) as db:
-                await db.execute("""
-                    INSERT OR REPLACE INTO instagram_accounts (
-                        telegram_chat_id, username, session_file, auto_post
-                    ) VALUES (5381201341, 'night_thought_12', 'data/sessions/instagram_5381201341.json', 1);
-                """)
-                await db.commit()
-                logger.info("Verified @night_thought_12 auto_post account in database")
+            await db_manager.save_instagram_account(
+                chat_id=target_chat_id,
+                username="aryafeed.in",
+                session_file=str(session_file),
+                auto_post=1
+            )
+            await db_manager.save_managed_account(
+                chat_id=target_chat_id,
+                alias="aryafeed",
+                username="aryafeed.in",
+                session_file=str(session_file),
+                auto_post=1,
+                engine_type="news",
+                set_active=True
+            )
+            logger.info("Verified @aryafeed.in auto_post account in database")
     except Exception as e:
         logger.warning(f"Could not verify instagram account in db: {e}")
 

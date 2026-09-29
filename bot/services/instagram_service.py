@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from instagrapi import Client
@@ -128,7 +129,7 @@ class InstagramService:
 
         def _do_login():
             try:
-                clean_sid = sessionid.strip().strip('"').strip("'")
+                clean_sid = urllib.parse.unquote(sessionid.strip().strip('"').strip("'"))
                 cl.login_by_sessionid(clean_sid)
                 cl.dump_settings(session_path)
                 username = cl.username
@@ -165,7 +166,7 @@ class InstagramService:
 
         def _do_login():
             try:
-                clean_sid = sessionid.strip().strip('"').strip("'")
+                clean_sid = urllib.parse.unquote(sessionid.strip().strip('"').strip("'"))
                 cl.login_by_sessionid(clean_sid)
                 cl.dump_settings(session_path)
                 username = cl.username
@@ -249,7 +250,7 @@ class InstagramService:
             return {
                 "account_id": acct_id.strip(),
                 "access_token": token.strip(),
-                "username": username or (active.get("username") if active else "night_thought_12"),
+                "username": username or (active.get("username") if active else "aryafeed.in"),
             }
         return None
 
@@ -266,11 +267,11 @@ class InstagramService:
         graph_creds = await self.get_graph_credentials(chat_id)
         if graph_creds:
             return {
-                "username": graph_creds.get("username", active.get("username", "night_thought_12") if active else "night_thought_12"),
+                "username": graph_creds.get("username", active.get("username", "aryafeed.in") if active else "aryafeed.in"),
                 "account_id": graph_creds.get("account_id"),
                 "type": "meta_graph_api",
-                "alias": active.get("alias", "default") if active else "default",
-                "engine_type": active.get("engine_type", "aesthetic") if active else "aesthetic",
+                "alias": active.get("alias", "aryafeed") if active else "aryafeed",
+                "engine_type": active.get("engine_type", "aryafeed") if active else "aryafeed",
                 "auto_post": active.get("auto_post", 1) if active else 1,
             }
         if active:
@@ -282,14 +283,14 @@ class InstagramService:
         session_path = self._get_session_path(chat_id)
         if session_path.exists():
             try:
-                username = "night_thought_12"
+                username = "aryafeed.in"
                 await db_manager.save_managed_account(
                     chat_id=chat_id,
-                    alias="night",
+                    alias="aryafeed",
                     username=username,
                     session_file=str(session_path),
                     auto_post=1,
-                    engine_type="aesthetic",
+                    engine_type="aryafeed",
                     set_active=True,
                 )
                 logger.info(f"[InstagramService] Auto-recovered active session for @{username} (chat {chat_id})")
