@@ -25,8 +25,8 @@ class TemplateStyle:
     ken_burns: str = "zoom_in"  # "zoom_in", "zoom_out", "pan", "none"
     fade_seconds: float = 0.5
     highlight_color: Tuple[int, int, int, int] = (255, 220, 50, 255)
-    brand_badge: bool = False
-    brand_text: str = "ARYAFEED.IN"
+    brand_badge: bool = True
+    brand_text: str = "ARYAFEED"
     brand_badge_color: Tuple[int, int, int, int] = (255, 220, 0, 255)
     source_tag: bool = False
 
@@ -199,7 +199,7 @@ TEMPLATES = {
         fade_seconds=0.4,
         highlight_color=(255, 220, 0, 255),  # AryaFeed Signature Yellow
         brand_badge=True,
-        brand_text="ARYAFEED.IN",
+        brand_text="ARYAFEED",
         brand_badge_color=(255, 220, 0, 255),
     ),
     "news_card": TemplateStyle(
@@ -223,7 +223,7 @@ TEMPLATES = {
         fade_seconds=0.3,
         highlight_color=(255, 220, 0, 255),  # AryaFeed Signature Yellow
         brand_badge=True,
-        brand_text="ARYAFEED.IN",
+        brand_text="ARYAFEED",
         brand_badge_color=(255, 220, 0, 255),
         source_tag=True,
     ),

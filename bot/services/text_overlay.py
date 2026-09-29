@@ -318,19 +318,17 @@ def create_text_overlay(
     canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
 
-    # Draw Brand Watermark Pill if requested by template or explicit brand parameter
-    should_badge = (brand is not None) or getattr(template, "brand_badge", False)
-    if should_badge:
-        brand_name = brand or getattr(template, "brand_text", "ARYAFEED.IN")
-        badge_bg = getattr(template, "brand_badge_color", (255, 220, 0, 255))
-        draw_brand_watermark(
-            canvas=canvas,
-            brand=brand_name,
-            font_path=font_path,
-            position="top",
-            bg_color=badge_bg,
-            source_text=source_tag,
-        )
+    # Draw Mandatory [ ARYAFEED ] Brand Title Pill across ALL reels and templates
+    brand_name = brand or getattr(template, "brand_text", "ARYAFEED") or "ARYAFEED"
+    badge_bg = getattr(template, "brand_badge_color", (255, 220, 0, 255))
+    draw_brand_watermark(
+        canvas=canvas,
+        brand=brand_name,
+        font_path=font_path,
+        position="top",
+        bg_color=badge_bg,
+        source_text=source_tag,
+    )
 
     # Adapt layout
     font, lines, text_w, text_h, line_spacing = calculate_text_layout(
