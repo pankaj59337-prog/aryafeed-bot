@@ -168,20 +168,15 @@ DAILY_SLOTS = [
 
 
 async def init_autopilot_db() -> None:
-    """Ensure autopilot settings table exists and default user is subscribed."""
+    """Ensure autopilot settings table exists."""
     async with aiosqlite.connect(config.database_path) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS autopilot_settings (
                 chat_id INTEGER PRIMARY KEY,
-                is_active INTEGER DEFAULT 1,
+                is_active INTEGER DEFAULT 0,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
-        # Seed primary user if not exists
-        await db.execute("""
-            INSERT OR IGNORE INTO autopilot_settings (chat_id, is_active)
-            VALUES (?, 1);
-        """, (DEFAULT_ADMIN_CHAT_ID,))
         await db.commit()
 
 
@@ -193,7 +188,7 @@ async def is_autopilot_active(chat_id: int) -> bool:
             row = await cursor.fetchone()
             if row is not None:
                 return bool(row[0])
-    return True if chat_id == DEFAULT_ADMIN_CHAT_ID else False
+    return False
 
 
 async def set_autopilot_status(chat_id: int, is_active: bool) -> None:
@@ -214,10 +209,7 @@ async def get_active_subscribers() -> List[int]:
     async with aiosqlite.connect(config.database_path) as db:
         async with db.execute("SELECT chat_id FROM autopilot_settings WHERE is_active = 1") as cursor:
             rows = await cursor.fetchall()
-            subs = [r[0] for r in rows]
-            if DEFAULT_ADMIN_CHAT_ID not in subs:
-                subs.append(DEFAULT_ADMIN_CHAT_ID)
-            return subs
+            return [r[0] for r in rows]
 
 
 def get_pure_vocal_lyrics_track(category: str, exclude_ids: Optional[set] = None) -> Dict[str, Any]:
@@ -526,6 +518,10 @@ def register_autopilot_jobs(app: Application) -> None:
     """Register daily scheduled jobs at exact Indian Standard Time (IST)."""
     if not app.job_queue:
         logger.warning("[AutoPilot] JobQueue not available, skipping schedule registration")
+        return
+
+    if os.environ.get("ENABLE_AUTOPILOT", "false").lower() not in ("true", "1", "yes"):
+        logger.info("[AutoPilot] Daily Autopilot pipeline is currently STOPPED/PAUSED. Set ENABLE_AUTOPILOT=true or enable via Telegram to activate.")
         return
 
     for slot in DAILY_SLOTS:

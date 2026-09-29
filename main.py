@@ -311,18 +311,18 @@ async def setup_bot() -> Application:
                 chat_id=target_chat_id,
                 username="aryafeed.in",
                 session_file=str(session_file),
-                auto_post=1
+                auto_post=0
             )
             await db_manager.save_managed_account(
                 chat_id=target_chat_id,
                 alias="aryafeed",
                 username="aryafeed.in",
                 session_file=str(session_file),
-                auto_post=1,
+                auto_post=0,
                 engine_type="news",
                 set_active=True
             )
-            logger.info("Verified @aryafeed.in auto_post account in database")
+            logger.info("Verified @aryafeed.in account in database (Auto-Post: STOPPED)")
     except Exception as e:
         logger.warning(f"Could not verify instagram account in db: {e}")
 
