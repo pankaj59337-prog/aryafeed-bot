@@ -315,6 +315,176 @@ class CompetitorMonitorService:
 
         return results
 
+    async def process_media_item(
+        self,
+        target_username: str,
+        media_obj: Any,
+        chat_id: int,
+        bot = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Process a single newly detected post immediately:
+        - If clean: stamp [ ARYAFEED ] watermark, preserve original audio, post to @aryafeed.in.
+        - If branded: clean caption and branding, stamp [ ARYAFEED ] pill, preserve original audio, post to @aryafeed.in.
+        """
+        post_id = str(getattr(media_obj, "pk", getattr(media_obj, "id", None)))
+        if not post_id or await self.is_post_processed(target_username, post_id):
+            return None
+
+        logger.info(f"[SpySentinel] 🎯 NEW POST DETECTED on @{target_username}! Post ID: {post_id}")
+        media_type = "video" if getattr(media_obj, "media_type", 1) == 2 else "image"
+        raw_caption = getattr(media_obj, "caption_text", "") or ""
+        clean_caption = self.clean_caption_for_aryafeed(raw_caption, target_username)
+
+        timestamp = int(datetime.now(timezone.utc).timestamp())
+        ext = ".mp4" if media_type == "video" else ".jpg"
+        dl_path = config.input_dir / f"spy_{target_username}_{post_id}_{timestamp}{ext}"
+
+        if media_type == "video":
+            video_url = getattr(media_obj, "video_url", None)
+            if not video_url:
+                return None
+            r = requests.get(video_url, stream=True, timeout=25)
+            with open(dl_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=65536):
+                    f.write(chunk)
+        else:
+            img_url = getattr(media_obj, "thumbnail_url", None)
+            if not img_url:
+                resources = getattr(media_obj, "resources", None)
+                if resources and len(resources) > 0:
+                    img_url = getattr(resources[0], "thumbnail_url", None)
+            if not img_url:
+                return None
+            r = requests.get(img_url, stream=True, timeout=20)
+            with open(dl_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=32768):
+                    f.write(chunk)
+
+        if not dl_path.exists() or dl_path.stat().st_size < 1000:
+            return None
+
+        has_branding = self.check_competitor_branding(raw_caption)
+        processed_path = config.output_dir / f"arya_spy_{target_username}_{post_id}_{timestamp}{ext}"
+
+        if media_type == "video":
+            # Preserve original audio stream, embed watermark on bottom-right
+            await asyncio.to_thread(stamp_video_watermark, dl_path, processed_path, "ARYAFEED")
+        else:
+            # Stamp yellow pill watermark on photo/meme card
+            await asyncio.to_thread(stamp_image_watermark, dl_path, processed_path, "ARYAFEED")
+
+        # Upload immediately to Instagram @aryafeed.in
+        if media_type == "video":
+            ig_result = await instagram_service.upload_reel(
+                chat_id=chat_id,
+                video_path=processed_path,
+                caption=clean_caption,
+            )
+        else:
+            ig_result = await instagram_service.upload_photo(
+                chat_id=chat_id,
+                photo_path=processed_path,
+                caption=clean_caption,
+            )
+
+        posted_to_ig = ig_result.get("success", False)
+        ig_url = ig_result.get("url")
+
+        await self.record_processed_post(
+            username=target_username,
+            post_id=post_id,
+            media_type=media_type,
+            caption=clean_caption,
+            has_branding=has_branding,
+            downloaded_file=str(dl_path),
+            processed_file=str(processed_path),
+            posted_to_ig=posted_to_ig,
+            instagram_url=ig_url,
+        )
+
+        # Notify Telegram
+        if bot:
+            try:
+                status_badge = "⚡ *SPY SENTINEL: Clean Post Auto-Uploaded!*" if not has_branding else "⚡ *SPY SENTINEL: Branded Post Cleaned & Uploaded!*"
+                caption_text = (
+                    f"{status_badge}\n\n"
+                    f"👤 *Source:* `@{target_username}`\n"
+                    f"📂 *Type:* {'Reel' if media_type == 'video' else 'Meme Card / Photo'}\n"
+                    f"🏷️ *Brand:* `[ ARYAFEED ]` (Bottom Right)\n"
+                    f"🎵 *Audio:* Preserved Original\n\n"
+                )
+                if ig_url:
+                    caption_text += f"🚀 [Live on @aryafeed.in]({ig_url})\n"
+                elif ig_result.get("error"):
+                    caption_text += f"⚠️ *Instagram Note:* {ig_result.get('error')}\n"
+
+                if media_type == "video":
+                    with open(processed_path, "rb") as vf:
+                        await bot.send_video(
+                            chat_id=chat_id,
+                            video=vf,
+                            caption=caption_text,
+                            parse_mode="Markdown",
+                        )
+                else:
+                    with open(processed_path, "rb") as pf:
+                        await bot.send_photo(
+                            chat_id=chat_id,
+                            photo=pf,
+                            caption=caption_text,
+                            parse_mode="Markdown",
+                        )
+            except Exception as e:
+                logger.warning(f"[SpySentinel] Telegram alert failed: {e}")
+
+        return {
+            "account": target_username,
+            "post_id": post_id,
+            "media_type": media_type,
+            "posted": posted_to_ig,
+            "url": ig_url,
+        }
+
+    async def run_realtime_spy_sentinel(
+        self,
+        chat_id: int = DEFAULT_ADMIN_CHAT_ID,
+        bot = None,
+    ) -> None:
+        """Continuous Real-Time Sentinel Loop:
+        Keeps 24/7 watch on the 4 competitor accounts.
+        The moment any new post is published, immediately processes and uploads to @aryafeed.in!
+        """
+        await self.init_tables()
+        logger.info(f"[SpySentinel] 🚨 24/7 Real-Time Spy Sentinel ACTIVATED on: {', '.join(COMPETITOR_ACCOUNTS)}")
+
+        while True:
+            try:
+                cl = await instagram_service.get_authenticated_client(chat_id)
+                if not cl:
+                    # Client not logged in yet, wait and retry
+                    await asyncio.sleep(60)
+                    continue
+
+                for target_username in COMPETITOR_ACCOUNTS:
+                    try:
+                        target_user_id = await asyncio.to_thread(cl.user_id_from_username, target_username)
+                        if target_user_id:
+                            medias = await asyncio.to_thread(cl.user_medias, target_user_id, 2)
+                            for m in (medias or []):
+                                await self.process_media_item(target_username, m, chat_id, bot)
+                    except Exception as e:
+                        logger.warning(f"[SpySentinel] Watch error for @{target_username}: {e}")
+
+                    # Stagger 15s between account checks for continuous, smooth monitoring
+                    await asyncio.sleep(15)
+
+            except asyncio.CancelledError:
+                logger.info("[SpySentinel] Sentinel cancelled.")
+                break
+            except Exception as e:
+                logger.exception(f"[SpySentinel] Sentinel loop error: {e}")
+                await asyncio.sleep(30)
+
 
 # Singleton instance
 competitor_monitor_service = CompetitorMonitorService()

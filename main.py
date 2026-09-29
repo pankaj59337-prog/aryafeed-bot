@@ -461,6 +461,14 @@ async def main_async() -> None:
 
     logger.info("🚀 Night Thought Reel Bot is running and polling for updates...")
 
+    # Launch 24/7 Real-Time Spy Sentinel Daemon on 4 Competitor Feeds
+    from bot.services.competitor_monitor import competitor_monitor_service
+    target_chat = config.admin_telegram_id or 5381201341
+    asyncio.create_task(
+        competitor_monitor_service.run_realtime_spy_sentinel(chat_id=target_chat, bot=app.bot)
+    )
+    logger.info("🚨 [SpySentinel] 24/7 Real-Time Competitor Spy Daemon launched!")
+
     # 24/7 Polling Supervisor: keep container alive and restart updater if interrupted
     try:
         while True:
