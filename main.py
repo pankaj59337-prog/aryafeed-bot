@@ -1,15 +1,134 @@
 """Main application entrypoint for Telegram Reel Maker Bot."""
 
+import os
+import sys
+import threading
+import time
+import urllib.request
+import traceback
+from pathlib import Path
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+# ---------------------------------------------------------------------------
+# 1. Early Healthcheck & Keepalive Server (Booted immediately for Cloud Platforms)
+# ---------------------------------------------------------------------------
+def _run_early_health_server() -> None:
+    port_str = os.environ.get("PORT")
+    if not port_str:
+        return
+    try:
+        port = int(port_str)
+    except ValueError:
+        return
+
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path in ("/", "/health"):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b"Telegram Reel Maker Bot is running!")
+                return
+
+            if self.path == "/logs":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                content = ""
+                if os.path.exists("crash.log"):
+                    try:
+                        with open("crash.log", "r", encoding="utf-8", errors="replace") as f:
+                            content += "=== CRASH LOG ===\n" + f.read() + "\n\n"
+                    except Exception:
+                        pass
+                if os.path.exists("bot.log"):
+                    try:
+                        with open("bot.log", "r", encoding="utf-8", errors="replace") as f:
+                            lines = f.readlines()
+                            content += "=== BOT LOG (last 100 lines) ===\n" + "".join(lines[-100:])
+                    except Exception:
+                        pass
+                if not content:
+                    content = "No logs yet. Bot container is booting up..."
+                self.wfile.write(content.encode("utf-8"))
+                return
+
+            if self.path.startswith("/media/"):
+                import shutil
+                raw_filename = self.path[len("/media/"):].split("?")[0].strip()
+                safe_name = os.path.basename(raw_filename)
+                target_file = Path("data/output") / safe_name
+                if not target_file.exists():
+                    target_file = Path("data/temp") / safe_name
+                if target_file.exists() and target_file.is_file():
+                    try:
+                        file_size = target_file.stat().st_size
+                        self.send_response(200)
+                        self.send_header("Content-Type", "video/mp4")
+                        self.send_header("Content-Length", str(file_size))
+                        self.send_header("Accept-Ranges", "bytes")
+                        self.end_headers()
+                        with open(target_file, "rb") as f:
+                            shutil.copyfileobj(f, self.wfile)
+                        return
+                    except Exception:
+                        pass
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(b"Media Not Found")
+                return
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"Telegram Reel Maker Bot is running!")
+
+        def log_message(self, format, *args):
+            pass
+
+    try:
+        server = HTTPServer(("0.0.0.0", port), HealthHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        print(f"[HealthServer] Immediate health server listening on port {port}", flush=True)
+    except Exception as e:
+        print(f"[HealthServer] Warning: Could not bind port {port}: {e}", file=sys.stderr, flush=True)
+
+    def _daemon_pinger():
+        time.sleep(30)
+        url = "https://insta-reel-maker-bot.onrender.com/"
+        while True:
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "DaemonKeepAlive/1.0"})
+                urllib.request.urlopen(req, timeout=15)
+            except Exception:
+                pass
+            time.sleep(180)
+
+    pinger_thread = threading.Thread(target=_daemon_pinger, daemon=True)
+    pinger_thread.start()
+
+
+# Fire health server before any heavy imports
+_run_early_health_server()
+
+# ---------------------------------------------------------------------------
+# 2. Crash Diagnostics & Global Logging Setup
+# ---------------------------------------------------------------------------
+def handle_unhandled_exception(exc_type, exc_value, exc_tb):
+    err_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    print(f"\n--- UNCAUGHT EXCEPTION ---\n{err_text}", file=sys.stderr, flush=True)
+    print(f"\n--- UNCAUGHT EXCEPTION ---\n{err_text}", file=sys.stdout, flush=True)
+    try:
+        with open("crash.log", "a", encoding="utf-8") as f:
+            f.write(f"\n--- CRASH AT {time.ctime()} ---\n{err_text}\n")
+    except Exception:
+        pass
+
+sys.excepthook = handle_unhandled_exception
+
 import asyncio
 import logging
-import sys
-import traceback
-
-def handle_unhandled_exception(exc_type, exc_value, exc_tb):
-    with open("crash.log", "a", encoding="utf-8") as f:
-        f.write(f"\n--- CRASH AT {asyncio.get_event_loop() if hasattr(asyncio, 'get_event_loop') else ''} ---\n")
-        traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
-sys.excepthook = handle_unhandled_exception
 
 from telegram import Update
 from telegram.request import HTTPXRequest
@@ -77,7 +196,7 @@ from bot.utils.config import config, mask_token
 from bot.utils.ffmpeg_check import check_ffmpeg_installed, check_ffprobe_installed, get_ffmpeg_version
 from database.db import db_manager
 
-# Ensure UTF-8 output encoding across Windows and POSIX (console & pythonw safe)
+# Configure logging
 log_handlers = [logging.FileHandler("bot.log", encoding="utf-8")]
 if sys.stdout is not None:
     try:
@@ -89,7 +208,6 @@ if sys.stdout is not None:
         pass
     log_handlers.append(logging.StreamHandler(sys.stdout))
 
-# Configure logging
 logging.basicConfig(
     format="%(asctime)s - [%(levelname)s] - %(name)s: %(message)s",
     level=logging.INFO,
@@ -124,7 +242,6 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
 
 async def render_keep_alive_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Periodically ping Render web service to prevent Free Tier from sleeping."""
-    import urllib.request
     url = "https://insta-reel-maker-bot.onrender.com/"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "RenderKeepAlive/1.0"})
@@ -135,7 +252,7 @@ async def render_keep_alive_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def setup_bot() -> Application:
-    """Verify prerequisites, initialize database, and register handlers."""
+    """Verify prerequisites, restore sessions, initialize database, and register handlers."""
     logger.info("Verifying environment...")
     if not check_ffmpeg_installed():
         logger.error("❌ FFmpeg is not installed or not found in system PATH!")
@@ -154,17 +271,53 @@ async def setup_bot() -> Application:
         )
         sys.exit(1)
 
-    # Initialize SQLite database
+    # 1. Restore Instagram session files from environment variables if passed
+    session_dir = Path("data/sessions")
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    ig_env = os.environ.get("INSTAGRAM_SESSION_DATA", "").strip()
+    if ig_env and len(ig_env) > 50:
+        try:
+            (session_dir / "instagram_5381201341.json").write_text(ig_env, encoding="utf-8")
+            logger.info("Restored Instagram session from INSTAGRAM_SESSION_DATA env var")
+        except Exception as e:
+            logger.warning(f"Could not restore Instagram session from env: {e}")
+
+    sync_env = os.environ.get("AUDIO_SYNC_SESSION_DATA", "").strip()
+    if sync_env and len(sync_env) > 50:
+        try:
+            (session_dir / "audio_sync_5381201341.json").write_text(sync_env, encoding="utf-8")
+            logger.info("Restored Audio Sync session from AUDIO_SYNC_SESSION_DATA env var")
+        except Exception as e:
+            logger.warning(f"Could not restore Audio Sync session from env: {e}")
+
+    # 2. Initialize SQLite database
     await db_manager.init_db()
 
-    # Load previously synced Instagram songs into playlist
+    # Ensure @night_thought_12 is registered in DB if session file exists
+    try:
+        session_file = session_dir / "instagram_5381201341.json"
+        if session_file.exists():
+            import aiosqlite
+            async with aiosqlite.connect(config.database_path) as db:
+                await db.execute("""
+                    INSERT OR REPLACE INTO instagram_accounts (
+                        telegram_chat_id, username, session_file, auto_post
+                    ) VALUES (5381201341, 'night_thought_12', 'data/sessions/instagram_5381201341.json', 1);
+                """)
+                await db.commit()
+                logger.info("Verified @night_thought_12 auto_post account in database")
+    except Exception as e:
+        logger.warning(f"Could not verify instagram account in db: {e}")
+
+    # 3. Load previously synced Instagram songs into playlist
     try:
         from bot.services.audio_sync_service import audio_sync_service
         await audio_sync_service.load_synced_tracks_into_playlist()
     except Exception as e:
         logger.warning(f"Could not load synced tracks at startup: {e}")
 
-    # Configure robust connection and upload timeouts for video reels
+    # 4. Configure robust connection and upload timeouts for video reels
     request_config = HTTPXRequest(
         connection_pool_size=16,
         connect_timeout=30.0,
@@ -233,98 +386,12 @@ async def setup_bot() -> Application:
     return app
 
 
-def start_health_server() -> None:
-    """Run lightweight HTTP healthcheck server for cloud hosting (Render, Koyeb, Railway)."""
-    import os
-    import threading
-    import time
-    import urllib.request
-    from http.server import HTTPServer, BaseHTTPRequestHandler
-
-    port_str = os.environ.get("PORT")
-    if not port_str:
-        return
-
-    port = int(port_str)
-
-    class HealthHandler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            if self.path == "/logs":
-                self.send_response(200)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
-                self.end_headers()
-                try:
-                    with open("bot.log", "r", encoding="utf-8", errors="replace") as f:
-                        lines = f.readlines()
-                        self.wfile.write("".join(lines[-100:]).encode("utf-8"))
-                except Exception as e:
-                    self.wfile.write(f"Error reading bot.log: {e}".encode("utf-8"))
-                return
-            if self.path.startswith("/media/"):
-                import shutil
-                from bot.utils.config import config
-                raw_filename = self.path[len("/media/"):].split("?")[0].strip()
-                safe_name = os.path.basename(raw_filename)
-                target_file = config.output_dir / safe_name
-                if not target_file.exists():
-                    target_file = config.temp_dir / safe_name
-                if target_file.exists() and target_file.is_file():
-                    try:
-                        file_size = target_file.stat().st_size
-                        self.send_response(200)
-                        self.send_header("Content-Type", "video/mp4")
-                        self.send_header("Content-Length", str(file_size))
-                        self.send_header("Accept-Ranges", "bytes")
-                        self.end_headers()
-                        with open(target_file, "rb") as f:
-                            shutil.copyfileobj(f, self.wfile)
-                        return
-                    except Exception as e:
-                        logger.warning(f"Error streaming media {safe_name}: {e}")
-                        return
-                self.send_response(404)
-                self.end_headers()
-                self.wfile.write(b"Media Not Found")
-                return
-
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"Telegram Reel Maker Bot is running!")
-
-        def log_message(self, format, *args):
-            pass
-
-    try:
-        server = HTTPServer(("0.0.0.0", port), HealthHandler)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        logger.info(f"Healthcheck server listening on port {port}")
-
-        # Additional daemon thread pinger for Render 24/7 uptime
-        def _daemon_pinger():
-            time.sleep(45)
-            url = "https://insta-reel-maker-bot.onrender.com/"
-            while True:
-                try:
-                    req = urllib.request.Request(url, headers={"User-Agent": "DaemonKeepAlive/1.0"})
-                    urllib.request.urlopen(req, timeout=20)
-                except Exception:
-                    pass
-                time.sleep(180)
-
-        pinger_thread = threading.Thread(target=_daemon_pinger, daemon=True)
-        pinger_thread.start()
-        logger.info("Keep-alive daemon thread started (pings every 3 minutes)")
-    except Exception as e:
-        logger.warning(f"Could not start healthcheck server on port {port}: {e}")
-
-
 async def main_async() -> None:
-    """Async main routine running in a single consistent event loop."""
+    """Async main routine running in a single consistent event loop with supervisor."""
     app = await setup_bot()
     await app.initialize()
     await app.start()
+
     if app.updater:
         for attempt in range(12):
             try:
@@ -336,11 +403,23 @@ async def main_async() -> None:
                     await asyncio.sleep(5)
                 else:
                     raise
+
     logger.info("🚀 Night Thought Reel Bot is running and polling for updates...")
 
+    # 24/7 Polling Supervisor: keep container alive and restart updater if interrupted
     try:
         while True:
-            await asyncio.sleep(3600)
+            await asyncio.sleep(10)
+            if app.updater and not app.updater.running:
+                logger.warning("[Supervisor] Updater stopped (transient conflict/network drop). Attempting restart...")
+                try:
+                    await app.updater.start_polling(drop_pending_updates=True, bootstrap_retries=5)
+                    logger.info("[Supervisor] Updater restarted successfully!")
+                except Exception as poll_err:
+                    if "Conflict" in str(poll_err) or "terminated by other getUpdates" in str(poll_err):
+                        logger.warning(f"[Supervisor] Transient conflict while restarting: {poll_err}. Will retry in 10s.")
+                    else:
+                        logger.error(f"[Supervisor] Error restarting updater: {poll_err}")
     finally:
         if app.updater and app.updater.running:
             await app.updater.stop()
@@ -350,18 +429,20 @@ async def main_async() -> None:
 
 
 def main() -> None:
-    """Run bot polling."""
+    """Run bot polling with global exception protection."""
     try:
-        start_health_server()
         asyncio.run(main_async())
     except (KeyboardInterrupt, SystemExit):
         pass
     except Exception as e:
-        with open("crash.log", "a", encoding="utf-8") as f:
-            f.write(f"\n[FATAL MAIN EXCEPTION]: {traceback.format_exc()}\n")
+        err_msg = traceback.format_exc()
+        print(f"[FATAL MAIN EXCEPTION]: {err_msg}", file=sys.stderr, flush=True)
+        try:
+            with open("crash.log", "a", encoding="utf-8") as f:
+                f.write(f"\n[FATAL MAIN EXCEPTION]: {err_msg}\n")
+        except Exception:
+            pass
         logger.error(f"Fatal error in main: {e}", exc_info=True)
-
-
 
 
 if __name__ == "__main__":
