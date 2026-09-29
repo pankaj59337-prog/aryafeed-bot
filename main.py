@@ -159,6 +159,7 @@ from bot.handlers.commands import (
     sync_folder_command,
     handle_sync_folder_callback,
     templates_command,
+    news_command,
 )
 from bot.handlers.media import (
     handle_document_media,
@@ -387,9 +388,28 @@ async def setup_bot() -> Application:
     app.add_handler(CommandHandler("insta_logout", insta_logout_command))
     app.add_handler(CommandHandler("insta_graph", insta_graph_command))
     app.add_handler(CommandHandler("insta_graph_status", insta_graph_status_command))
+    app.add_handler(CommandHandler(["news", "breaking"], news_command))
 
     # Register Global Error Handler
     app.add_error_handler(global_error_handler)
+
+    async def periodic_news_monitor_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Autonomous news scout: checks for breaking stories, renders and delivers/posts."""
+        if os.environ.get("AUTO_NEWS_REELS", "false").lower() not in ("true", "1", "yes"):
+            return
+        from bot.services.live_news_service import live_news_service
+        try:
+            target_chat = config.admin_telegram_id or 5381201341
+            active = await db_manager.get_active_account(target_chat)
+            should_post = bool(active.get("auto_post", 0)) if active else False
+            logger.info(f"[PeriodicNews] Scanning breaking news for chat {target_chat} (Auto-Post: {should_post})...")
+            await live_news_service.create_and_publish_news_reel(
+                chat_id=target_chat,
+                auto_post=should_post,
+                bot=context.bot,
+            )
+        except Exception as e:
+            logger.warning(f"[PeriodicNews] Autonomous news check error: {e}")
 
     # Register Periodic Cleanup Job, Keep-Alive Job & Daily AutoPilot Schedulers
     if app.job_queue:
@@ -397,6 +417,8 @@ async def setup_bot() -> Application:
         logger.info("Scheduled retention cleanup job (interval: 1 hour)")
         app.job_queue.run_repeating(render_keep_alive_job, interval=180, first=30)
         logger.info("Registered 24/7 Keep-Alive ping job (interval: 3 mins)")
+        app.job_queue.run_repeating(periodic_news_monitor_job, interval=7200, first=120)
+        logger.info("Registered Autonomous Breaking News monitor job (interval: 2 hours)")
         register_autopilot_jobs(app)
 
     return app

@@ -282,3 +282,35 @@ async def handle_sync_folder_callback(update: Update, context: ContextTypes.DEFA
         parse_mode="Markdown"
     )
 
+
+@restricted
+async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Fetch latest breaking news, render 1080x1920 reel with [ ARYAFEED ], and deliver/post."""
+    chat_id = update.effective_chat.id
+    msg = await update.effective_message.reply_text("⚡ *Scanning breaking Indian news feeds...*", parse_mode="Markdown")
+
+    from bot.services.live_news_service import live_news_service
+    try:
+        args = context.args or []
+        should_post = "post" in [a.lower() for a in args] or False
+
+        await msg.edit_text("📰 *Found breaking story! Rendering 1080x1920 ARYAFEED Reel...*", parse_mode="Markdown")
+
+        res = await live_news_service.create_and_publish_news_reel(
+            chat_id=chat_id,
+            auto_post=should_post,
+            bot=context.bot,
+        )
+
+        if not res.get("success"):
+            await msg.edit_text(f"⚠️ *News Reel Error:* {res.get('error')}", parse_mode="Markdown")
+            return
+
+        try:
+            await msg.delete()
+        except Exception:
+            pass
+    except Exception as e:
+        logger.exception(f"Error in news_command: {e}")
+        await msg.edit_text(f"⚠️ *Error generating news reel:* {e}", parse_mode="Markdown")
+
