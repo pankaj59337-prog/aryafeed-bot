@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: insta-reel-maker-bot
+    env: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: INSTAGRAM_ACCOUNT_ID
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OUTPUT_DURATION_SECONDS
+        value: "7"
+      - key: MAX_VIDEO_SIZE_MB
+        value: "100"
