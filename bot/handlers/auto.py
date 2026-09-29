@@ -1014,6 +1014,75 @@ async def handle_auto_callbacks(update: Update, context: ContextTypes.DEFAULT_TY
         await send_interactive_studio_preview(update, context, cat_id=cat_id, force_new_img=True)
         return
 
+    elif data == "auto_render_custom_reel":
+        session = await db_manager.get_session(chat_id)
+        img_path = session.get("media_path") if session else None
+        if not img_path or not Path(img_path).exists():
+            await query.edit_message_caption("❌ Image file not found for reel generation.")
+            return
+
+        status_msg = await context.bot.send_message(
+            chat_id=chat_id,
+            text="🎬 *Rendering 1080x1920 ARYAFEED Animated Reel...*\n\nAdding Ken Burns zoom motion, Bollywood vocal audio & `[ ARYAFEED ]` watermark ⚡",
+            parse_mode="Markdown"
+        )
+
+        cat_id = "news_banner"
+        vocal_path = music_service.get_bollywood_track(cat_id)
+        song_title = music_service.get_track_title(vocal_path)
+
+        timestamp = int(asyncio.get_event_loop().time())
+        deployed_img = config.input_dir / f"{chat_id}_custom_reel_{timestamp}.jpg"
+        shutil.copy(img_path, deployed_img)
+
+        await db_manager.update_session(
+            chat_id,
+            media_path=str(deployed_img),
+            media_type="image",
+            selected_template=cat_id,
+            music_path=str(vocal_path) if vocal_path else None,
+        )
+
+        try:
+            final_video = await execute_render_job(chat_id)
+            caption = session.get("custom_caption") or "⚡ Daily dose of viral stories & reels @aryafeed.in\n#aryafeed #reels #viral #trending"
+
+            await db_manager.update_session(
+                chat_id,
+                output_path=str(final_video),
+                media_type="video",
+                custom_caption=caption,
+            )
+
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("🚀 1-Tap Post Reel to Instagram", callback_data="post_insta"),
+                ]
+            ])
+
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
+
+            with open(final_video, "rb") as vf:
+                await context.bot.send_video(
+                    chat_id=chat_id,
+                    video=vf,
+                    caption=(
+                        f"🎬 *ARYAFEED 1080x1920 Reel Ready!*\n\n"
+                        f"🎵 *Audio:* {song_title}\n"
+                        f"🏷️ *Brand:* `[ ARYAFEED ]` (Bottom Right)\n\n"
+                        f"Tap below to publish reel live to `@aryafeed.in`:"
+                    ),
+                    reply_markup=keyboard,
+                    parse_mode="Markdown",
+                )
+        except Exception as e:
+            logger.exception(f"Custom reel render failed: {e}")
+            await status_msg.edit_text(f"❌ Reel rendering failed: {e}")
+        return
+
     elif data == "studio_skip":
         cat_id = context.user_data.get("chosen_cat", "news_banner")
         try:

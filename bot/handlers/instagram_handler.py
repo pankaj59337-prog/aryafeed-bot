@@ -352,34 +352,39 @@ async def handle_post_to_insta_callback(update: Update, context: ContextTypes.DE
         )
         return
 
-    video_path = Path(session["output_path"])
-    if not video_path.exists():
+    media_file = Path(session["output_path"])
+    if not media_file.exists():
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"❌ Video file not found: {video_path.name}"
+            text=f"❌ Media file not found: {media_file.name}"
         )
         return
 
-    hook_text = session.get("overlay_text") or "Late night thoughts 🌚💋"
-    style = session.get("selected_template") or "sexy"
+    is_image = media_file.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")
+    hook_text = session.get("overlay_text") or "⚡ Daily dose of viral stories & memes @aryafeed.in"
+    style = session.get("selected_template") or "news_banner"
 
     # Generate viral caption & hashtags
-    caption = generate_instagram_caption(hook_text, style=style)
+    caption = session.get("custom_caption") or generate_instagram_caption(hook_text, style=style)
 
     await query.edit_message_reply_markup(reply_markup=None)
+    media_desc = "Photo" if is_image else "Reel"
     status_msg = await context.bot.send_message(
         chat_id=chat_id,
-        text="🚀 *Uploading Reel to Instagram...* Please wait a moment.",
+        text=f"🚀 *Uploading {media_desc} to Instagram (@aryafeed.in)...* Please wait.",
         parse_mode="Markdown"
     )
 
-    res = await instagram_service.upload_reel(chat_id, video_path, caption=caption)
+    if is_image:
+        res = await instagram_service.upload_photo(chat_id, media_file, caption=caption)
+    else:
+        res = await instagram_service.upload_reel(chat_id, media_file, caption=caption)
 
     if res.get("success"):
         post_url = res.get("url") or "Instagram Feed"
         await status_msg.edit_text(
-            f"🎉 *Reel Successfully Published to Instagram!*\n\n"
-            f"🔗 [View Live Reel on Instagram]({post_url})\n\n"
+            f"🎉 *{media_desc} Successfully Published to Instagram!*\n\n"
+            f"🔗 [View Live on Instagram]({post_url})\n\n"
             f"📝 **Caption Used:**\n```\n{caption}\n```",
             parse_mode="Markdown",
             disable_web_page_preview=False

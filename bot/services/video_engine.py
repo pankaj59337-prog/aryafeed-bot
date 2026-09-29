@@ -444,3 +444,158 @@ def render_complete_reel(
     )
 
     return output_path
+
+
+def stamp_image_watermark(
+    input_path: Path,
+    output_path: Path,
+    brand: str = "ARYAFEED",
+) -> Path:
+    """Stamp signature [ ARYAFEED ] yellow pill watermark at bottom-right of an image.
+    Preserves original aspect ratio and resolution (meme cards, photos, infographics).
+    """
+    from PIL import Image, ImageDraw
+    from bot.services.text_overlay import load_font
+
+    with Image.open(input_path) as im:
+        if im.mode != "RGB":
+            im = im.convert("RGB")
+        w, h = im.size
+
+        # Dynamically scale font & pill proportional to image width
+        scale = max(0.5, min(2.5, w / 1080.0))
+        badge_font_size = int(32 * scale)
+        badge_font = load_font(config.font_path, badge_font_size)
+
+        draw = ImageDraw.Draw(im)
+        badge_text = brand.upper().strip()
+        bbox = draw.textbbox((0, 0), badge_text, font=badge_font)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
+
+        pad_x = int(22 * scale)
+        pad_y = int(9 * scale)
+        badge_w = tw + (pad_x * 2)
+        badge_h = th + (pad_y * 2)
+        radius = int(12 * scale)
+
+        margin_right = int(32 * scale)
+        margin_bottom = int(32 * scale)
+        badge_x = w - margin_right - badge_w
+        badge_y = h - margin_bottom - badge_h
+
+        # 1. Soft shadow
+        draw.rounded_rectangle(
+            (badge_x - 1, badge_y + 2, badge_x + badge_w + 1, badge_y + badge_h + 3),
+            radius=radius,
+            fill=(0, 0, 0, 160),
+        )
+        # 2. Signature yellow pill (255, 220, 0)
+        draw.rounded_rectangle(
+            (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
+            radius=radius,
+            fill=(255, 220, 0),
+        )
+        # 3. High-contrast bold black text
+        text_x = badge_x + pad_x - bbox[0]
+        text_y = badge_y + pad_y - bbox[1]
+        draw.text((text_x, text_y), badge_text, font=badge_font, fill=(10, 10, 10))
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        im.save(output_path, "JPEG", quality=95)
+        return output_path
+
+
+def stamp_video_watermark(
+    video_path: Path,
+    output_path: Path,
+    brand: str = "ARYAFEED",
+) -> Path:
+    """Stamp signature [ ARYAFEED ] yellow pill watermark at bottom-right of a video.
+    Encodes ultrafast with libx264 while copying audio stream directly.
+    """
+    import json
+    from PIL import Image, ImageDraw
+    from bot.services.text_overlay import load_font
+
+    # Probe video dimensions using ffprobe
+    probe_cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "json",
+        str(video_path),
+    ]
+    try:
+        res = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+        probe_data = json.loads(res.stdout)
+        width = int(probe_data["streams"][0]["width"])
+        height = int(probe_data["streams"][0]["height"])
+    except Exception:
+        width, height = 1080, 1920
+
+    scale = max(0.5, min(2.5, width / 1080.0))
+    badge_font_size = int(32 * scale)
+    badge_font = load_font(config.font_path, badge_font_size)
+
+    overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    badge_text = brand.upper().strip()
+    bbox = draw.textbbox((0, 0), badge_text, font=badge_font)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
+
+    pad_x = int(22 * scale)
+    pad_y = int(9 * scale)
+    badge_w = tw + (pad_x * 2)
+    badge_h = th + (pad_y * 2)
+    radius = int(12 * scale)
+
+    # Positioned above bottom Instagram UI (~140px on 1920h)
+    margin_right = int(36 * scale)
+    margin_bottom = int(140 * scale) if height > width else int(36 * scale)
+    badge_x = width - margin_right - badge_w
+    badge_y = height - margin_bottom - badge_h
+
+    draw.rounded_rectangle(
+        (badge_x - 1, badge_y + 2, badge_x + badge_w + 1, badge_y + badge_h + 3),
+        radius=radius,
+        fill=(0, 0, 0, 160),
+    )
+    draw.rounded_rectangle(
+        (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
+        radius=radius,
+        fill=(255, 220, 0, 255),
+    )
+    text_x = badge_x + pad_x - bbox[0]
+    text_y = badge_y + pad_y - bbox[1]
+    draw.text((text_x, text_y), badge_text, font=badge_font, fill=(10, 10, 10, 255))
+
+    overlay_path = output_path.parent / f"{output_path.stem}_watermark.png"
+    overlay.save(overlay_path, "PNG")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(video_path),
+        "-i", str(overlay_path),
+        "-filter_complex", "[0:v][1:v]overlay=0:0[v]",
+        "-map", "[v]",
+        "-map", "0:a?",
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-crf", "22",
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        str(output_path),
+    ]
+    run_ffmpeg_command(cmd)
+
+    try:
+        overlay_path.unlink()
+    except Exception:
+        pass
+
+    return output_path

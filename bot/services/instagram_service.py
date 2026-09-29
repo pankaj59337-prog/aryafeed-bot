@@ -412,6 +412,47 @@ class InstagramService:
 
         return await asyncio.to_thread(_do_upload)
 
+    async def upload_photo(
+        self,
+        chat_id: int,
+        photo_path: Path,
+        caption: str = ""
+    ) -> Dict[str, Any]:
+        """Upload a photo / meme card directly to user's Instagram feed."""
+        if not photo_path.exists():
+            return {"success": False, "error": f"Photo file not found: {photo_path}"}
+
+        cl = await self.get_authenticated_client(chat_id)
+        if not cl:
+            return {
+                "success": False,
+                "error": "Instagram account not connected. Use `/insta_login` to connect."
+            }
+
+        def _do_upload():
+            try:
+                logger.info(f"Uploading photo {photo_path} to Instagram...")
+                media = cl.photo_upload(
+                    path=str(photo_path),
+                    caption=caption,
+                )
+                media_code = getattr(media, "code", None)
+                media_id = getattr(media, "id", None)
+                post_url = f"https://www.instagram.com/p/{media_code}/" if media_code else None
+                return {
+                    "success": True,
+                    "media_id": media_id,
+                    "code": media_code,
+                    "url": post_url
+                }
+            except LoginRequired:
+                return {"success": False, "error": "Instagram session expired. Please re-login with /insta_login."}
+            except Exception as e:
+                logger.exception(f"Failed to upload photo to Instagram: {e}")
+                return {"success": False, "error": str(e)}
+
+        return await asyncio.to_thread(_do_upload)
+
 
 # Singleton instance
 instagram_service = InstagramService()

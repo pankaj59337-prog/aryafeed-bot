@@ -465,16 +465,31 @@ class LiveNewsService:
         # Send Telegram notification if bot context provided
         if bot:
             try:
-                alert_text = (
-                    f"⚡ *AryaFeed Breaking News Reel Ready!*\n\n"
-                    f"📰 *Headline:* {headline}\n"
-                    f"🏷️ *Brand:* `[ ARYAFEED ]`\n"
-                    f"📌 *Source:* {source}\n\n"
-                )
                 if result.get("instagram_url"):
-                    alert_text += f"🚀 *Live on Instagram:* [Watch Reel]({result['instagram_url']})\n"
+                    alert_text = (
+                        f"✅ *AryaFeed News — POSTED LIVE!*\n\n"
+                        f"📰 {headline}\n"
+                        f"📌 {source}\n\n"
+                        f"🚀 [Watch Reel]({result['instagram_url']})"
+                    )
                 elif result.get("ig_error"):
-                    alert_text += f"⚠️ *Instagram Note:* {result.get('ig_error')}\n"
+                    error_msg = result["ig_error"]
+                    is_session_error = any(kw in error_msg.lower() for kw in ("session", "login", "expired", "401", "403"))
+                    alert_text = (
+                        f"⚡ *AryaFeed News Reel Ready*\n\n"
+                        f"📰 {headline}\n"
+                        f"📌 {source}\n\n"
+                    )
+                    if is_session_error:
+                        alert_text += "🔴 *Instagram session expired!* Use /insta\\_login to reconnect.\n"
+                    else:
+                        alert_text += f"⚠️ Upload failed: {error_msg}\n"
+                else:
+                    alert_text = (
+                        f"⚡ *AryaFeed News Reel Ready!*\n\n"
+                        f"📰 {headline}\n"
+                        f"📌 {source}\n"
+                    )
 
                 with open(video_path, "rb") as vf:
                     await bot.send_video(

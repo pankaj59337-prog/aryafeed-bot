@@ -312,18 +312,18 @@ async def setup_bot() -> Application:
                 chat_id=target_chat_id,
                 username="aryafeed.in",
                 session_file=str(session_file),
-                auto_post=0
+                auto_post=1
             )
             await db_manager.save_managed_account(
                 chat_id=target_chat_id,
                 alias="aryafeed",
                 username="aryafeed.in",
                 session_file=str(session_file),
-                auto_post=0,
+                auto_post=1,
                 engine_type="news",
                 set_active=True
             )
-            logger.info("Verified @aryafeed.in account in database (Auto-Post: STOPPED)")
+            logger.info("Verified @aryafeed.in account in database (Auto-Post: ENABLED)")
     except Exception as e:
         logger.warning(f"Could not verify instagram account in db: {e}")
 
@@ -400,8 +400,8 @@ async def setup_bot() -> Application:
         from bot.services.live_news_service import live_news_service
         try:
             target_chat = config.admin_telegram_id or 5381201341
-            active = await db_manager.get_active_account(target_chat)
-            should_post = bool(active.get("auto_post", 0)) if active else False
+            # AUTO_NEWS_REELS=true means full autonomy — always post
+            should_post = True
             logger.info(f"[PeriodicNews] Scanning breaking news for chat {target_chat} (Auto-Post: {should_post})...")
             await live_news_service.create_and_publish_news_reel(
                 chat_id=target_chat,
@@ -417,8 +417,8 @@ async def setup_bot() -> Application:
         logger.info("Scheduled retention cleanup job (interval: 1 hour)")
         app.job_queue.run_repeating(render_keep_alive_job, interval=180, first=30)
         logger.info("Registered 24/7 Keep-Alive ping job (interval: 3 mins)")
-        app.job_queue.run_repeating(periodic_news_monitor_job, interval=7200, first=120)
-        logger.info("Registered Autonomous Breaking News monitor job (interval: 2 hours)")
+        app.job_queue.run_repeating(periodic_news_monitor_job, interval=3600, first=60)
+        logger.info("Registered Autonomous Breaking News monitor job (interval: 1 hour)")
         register_autopilot_jobs(app)
 
     return app
