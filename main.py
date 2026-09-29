@@ -24,33 +24,37 @@ def _run_early_health_server() -> None:
     class HealthHandler(BaseHTTPRequestHandler):
         def do_GET(self):
             if self.path in ("/", "/health"):
+                body = b"Telegram Reel Maker Bot is running!"
                 self.send_response(200)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
-                self.wfile.write(b"Telegram Reel Maker Bot is running!")
+                self.wfile.write(body)
                 return
 
             if self.path == "/logs":
-                self.send_response(200)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
-                self.end_headers()
                 content = ""
                 if os.path.exists("crash.log"):
                     try:
                         with open("crash.log", "r", encoding="utf-8", errors="replace") as f:
                             content += "=== CRASH LOG ===\n" + f.read() + "\n\n"
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        content += f"Error reading crash.log: {e}\n"
                 if os.path.exists("bot.log"):
                     try:
                         with open("bot.log", "r", encoding="utf-8", errors="replace") as f:
                             lines = f.readlines()
                             content += "=== BOT LOG (last 100 lines) ===\n" + "".join(lines[-100:])
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        content += f"Error reading bot.log: {e}\n"
                 if not content:
-                    content = "No logs yet. Bot container is booting up..."
-                self.wfile.write(content.encode("utf-8"))
+                    content = f"Bot status: RUNNING 24/7. Current Time: {time.ctime()}\n"
+                body = content.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
                 return
 
             if self.path.startswith("/media/"):
@@ -73,15 +77,20 @@ def _run_early_health_server() -> None:
                         return
                     except Exception:
                         pass
+                body = b"Media Not Found"
                 self.send_response(404)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
-                self.wfile.write(b"Media Not Found")
+                self.wfile.write(body)
                 return
 
+            body = b"Telegram Reel Maker Bot is running!"
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(b"Telegram Reel Maker Bot is running!")
+            self.wfile.write(body)
 
         def log_message(self, format, *args):
             pass
@@ -95,15 +104,16 @@ def _run_early_health_server() -> None:
         print(f"[HealthServer] Warning: Could not bind port {port}: {e}", file=sys.stderr, flush=True)
 
     def _daemon_pinger():
-        time.sleep(30)
+        time.sleep(15)
         url = "https://insta-reel-maker-bot.onrender.com/"
         while True:
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "DaemonKeepAlive/1.0"})
-                urllib.request.urlopen(req, timeout=15)
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    pass
             except Exception:
                 pass
-            time.sleep(180)
+            time.sleep(120)
 
     pinger_thread = threading.Thread(target=_daemon_pinger, daemon=True)
     pinger_thread.start()
@@ -429,20 +439,23 @@ async def main_async() -> None:
 
 
 def main() -> None:
-    """Run bot polling with global exception protection."""
-    try:
-        asyncio.run(main_async())
-    except (KeyboardInterrupt, SystemExit):
-        pass
-    except Exception as e:
-        err_msg = traceback.format_exc()
-        print(f"[FATAL MAIN EXCEPTION]: {err_msg}", file=sys.stderr, flush=True)
+    """Run bot polling with global exception protection and persistent resurrection."""
+    while True:
         try:
-            with open("crash.log", "a", encoding="utf-8") as f:
-                f.write(f"\n[FATAL MAIN EXCEPTION]: {err_msg}\n")
-        except Exception:
-            pass
-        logger.error(f"Fatal error in main: {e}", exc_info=True)
+            asyncio.run(main_async())
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            err_msg = traceback.format_exc()
+            print(f"[FATAL MAIN EXCEPTION]: {err_msg}", file=sys.stderr, flush=True)
+            print(f"[FATAL MAIN EXCEPTION]: {err_msg}", file=sys.stdout, flush=True)
+            try:
+                with open("crash.log", "a", encoding="utf-8") as f:
+                    f.write(f"\n[FATAL MAIN EXCEPTION AT {time.ctime()}]: {err_msg}\n")
+            except Exception:
+                pass
+            logger.error(f"Fatal error in main: {e}", exc_info=True)
+            time.sleep(5)
 
 
 if __name__ == "__main__":
