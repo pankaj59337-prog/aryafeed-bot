@@ -95,7 +95,7 @@ def _run_early_health_server() -> None:
 
     try:
         server = HTTPServer(("0.0.0.0", port), HealthHandler)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever, daemon=False)
         thread.start()
         print(f"[HealthServer] Immediate health server listening on port {port}", flush=True)
     except Exception as e:
@@ -264,10 +264,10 @@ async def setup_bot() -> Application:
     logger.info("Verifying environment...")
     if not check_ffmpeg_installed():
         logger.error("❌ FFmpeg is not installed or not found in system PATH!")
-        sys.exit(1)
+        raise RuntimeError("FFmpeg is not installed or not found in system PATH")
     if not check_ffprobe_installed():
         logger.error("❌ FFprobe is not installed or not found in system PATH!")
-        sys.exit(1)
+        raise RuntimeError("FFprobe is not installed or not found in system PATH")
 
     logger.info(f"FFmpeg detected: {get_ffmpeg_version()}")
     logger.info(f"Configuration loaded: {config}")
@@ -277,7 +277,7 @@ async def setup_bot() -> Application:
             "❌ TELEGRAM_BOT_TOKEN is not configured!\n"
             "Please create a .env file from .env.example and set your TELEGRAM_BOT_TOKEN from @BotFather."
         )
-        sys.exit(1)
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
 
     # 1. Restore Instagram session files from environment variables if passed
     session_dir = Path("data/sessions")
@@ -438,21 +438,23 @@ async def main_async() -> None:
 
 def main() -> None:
     """Run bot polling with global exception protection and persistent resurrection."""
+    print(f"[{time.ctime()}] Bot process started. Main execution loop active.", flush=True)
     while True:
         try:
+            print(f"[{time.ctime()}] Starting bot main_async()...", flush=True)
             asyncio.run(main_async())
         except KeyboardInterrupt:
+            print(f"[{time.ctime()}] KeyboardInterrupt received. Exiting.", flush=True)
             break
-        except Exception as e:
+        except BaseException as e:
             err_msg = traceback.format_exc()
-            print(f"[FATAL MAIN EXCEPTION]: {err_msg}", file=sys.stderr, flush=True)
-            print(f"[FATAL MAIN EXCEPTION]: {err_msg}", file=sys.stdout, flush=True)
+            print(f"\n[{time.ctime()}] [RECOVERED CRITICAL EXCEPTION] {type(e).__name__}: {e}\n{err_msg}", file=sys.stderr, flush=True)
+            print(f"\n[{time.ctime()}] [RECOVERED CRITICAL EXCEPTION] {type(e).__name__}: {e}\n{err_msg}", file=sys.stdout, flush=True)
             try:
                 with open("crash.log", "a", encoding="utf-8") as f:
-                    f.write(f"\n[FATAL MAIN EXCEPTION AT {time.ctime()}]: {err_msg}\n")
+                    f.write(f"\n[{time.ctime()}] [CRITICAL {type(e).__name__}]: {e}\n{err_msg}\n")
             except Exception:
                 pass
-            logger.error(f"Fatal error in main: {e}", exc_info=True)
             time.sleep(5)
 
 
