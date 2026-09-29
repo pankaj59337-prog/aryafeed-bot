@@ -36,6 +36,11 @@ DEFAULT_ADMIN_CHAT_ID = 5381201341
 # RSS feeds from top Indian publishers with direct high-resolution editorial photos
 NEWS_FEEDS = [
     {
+        "url": "https://www.rvcj.com/feed/",
+        "category": "rvcj",
+        "publisher": "RVCJ Media",
+    },
+    {
         "url": "https://www.hindustantimes.com/feeds/rss/trending/rssfeed.xml",
         "category": "trending",
         "publisher": "Hindustan Times",
@@ -324,6 +329,13 @@ class LiveNewsService:
                             m = re.search(r'src=["\'](https?://[^"\'>\s]+)["\']', desc.text)
                             if m:
                                 image_url = m.group(1)
+                    if not image_url:
+                        for child in item:
+                            if 'encoded' in child.tag and child.text:
+                                m = re.search(r'src=["\'](https?://[^"\'>\s]+\.(?:jpg|jpeg|png|webp)[^"\'>\s]*)["\']', child.text, re.IGNORECASE)
+                                if m:
+                                    image_url = m.group(1)
+                                    break
 
                     news_hash = hashlib.md5(title.encode("utf-8")).hexdigest()
 
