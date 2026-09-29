@@ -1,21 +1,26 @@
 """Autonomous Real-Time News Monitor & Breaking Reel Engine for @aryafeed.in.
 
 Fetches latest trending Indian stories, formats high-curiosity headlines with
-[ ARYAFEED ] branding badge, renders 1080x1920 MP4 reel, and auto-posts to Instagram.
+[ ARYAFEED ] branding badge, acquires the REAL news subject editorial photos
+(athletes, celebrities, cricketers, politicians, events), renders 1080x1920 MP4 reel,
+and auto-posts to Instagram.
 """
 
 import asyncio
 import hashlib
+import io
 import logging
 import random
 import re
 import shutil
 import time
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import aiosqlite
+from PIL import Image, ImageDraw
 
 from bot.services.instagram_service import instagram_service
 from bot.services.render_service import execute_render_job
@@ -28,23 +33,47 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_ADMIN_CHAT_ID = 5381201341
 
-# RSS feeds for high-virality Indian news
+# RSS feeds from top Indian publishers with direct high-resolution editorial photos
 NEWS_FEEDS = [
     {
-        "url": "https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en",
+        "url": "https://www.hindustantimes.com/feeds/rss/trending/rssfeed.xml",
+        "category": "trending",
+        "publisher": "Hindustan Times",
+    },
+    {
+        "url": "https://indianexpress.com/feed/",
+        "category": "breaking",
+        "publisher": "Indian Express",
+    },
+    {
+        "url": "https://timesofindia.indiatimes.com/rssfeedstopstories.cms",
         "category": "top",
+        "publisher": "Times of India",
+    },
+    {
+        "url": "https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml",
+        "category": "india",
+        "publisher": "Hindustan Times",
+    },
+    {
+        "url": "https://www.indiatoday.in/rss/home",
+        "category": "national",
+        "publisher": "India Today",
+    },
+    {
+        "url": "https://indianexpress.com/section/sports/feed/",
+        "category": "sports",
+        "publisher": "Indian Express",
+    },
+    {
+        "url": "https://indianexpress.com/section/entertainment/feed/",
+        "category": "entertainment",
+        "publisher": "Indian Express",
     },
     {
         "url": "https://news.google.com/rss/headlines/section/topic/NATION?hl=en-IN&gl=IN&ceid=IN:en",
         "category": "india",
-    },
-    {
-        "url": "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-IN&gl=IN&ceid=IN:en",
-        "category": "tech",
-    },
-    {
-        "url": "https://news.google.com/rss/headlines/section/topic/SPORTS?hl=en-IN&gl=IN&ceid=IN:en",
-        "category": "sports",
+        "publisher": "Google News",
     },
 ]
 
@@ -55,6 +84,8 @@ VIRAL_KEYWORDS = [
     "isro", "moon", "nasa", "ai", "police", "arrested", "cctv",
     "saved", "hero", "dog", "scooter", "bizarre", "viral", "world record",
     "first time", "shocking", "millionaire", "success", "achievement",
+    "court", "delhi", "panel", "cji", "modi", "kohli", "rohit", "dhoni",
+    "flight", "rapido", "fratricide", "encounter", "cisf", "jawan",
 ]
 
 # Unwanted routine / dry political debate terms to filter out
@@ -85,10 +116,12 @@ def clean_source_name(raw_source: str) -> str:
     """Normalize news source name for clean [ PER SOURCE ] badge."""
     src = raw_source.lower().strip()
     src = re.sub(r'https?://|www\.|\.com|\.in|\.co|\.org', '', src)
-    if "ndtv" in src:
-        return "NDTV"
+    if "hindustan" in src or "ht" in src:
+        return "HINDUSTAN TIMES"
     if "hindu" in src:
         return "THE HINDU"
+    if "ndtv" in src:
+        return "NDTV"
     if "times" in src or "toi" in src:
         return "TIMES OF INDIA"
     if "today" in src:
@@ -107,8 +140,14 @@ def clean_source_name(raw_source: str) -> str:
 
 
 def format_viral_news_headline(raw_title: str, source: str) -> str:
-    """Transform a raw news title into a high-curiosity 2-line uppercase hook."""
-    clean = re.sub(r'\s*-\s*[^-]+$', '', raw_title).strip()
+    """Transform a raw news title into a high-curiosity 2-3 line uppercase hook."""
+    # Strip outlet suffixes like ' - The Indian Express' or ' | Hindustan Times'
+    clean = re.sub(
+        r'\s+[-|]\s+(?:The\s+)?(?:Hindustan Times|Indian Express|Times of India|NDTV|India Today|News18|Zee News|ANI|Reuters|BBC|HT)[^$]*$',
+        '',
+        raw_title,
+        flags=re.IGNORECASE,
+    ).strip()
     clean = re.sub(r'[\'"]', '', clean)
 
     # Highlight monetary figures, achievements, numbers
@@ -131,9 +170,15 @@ def format_viral_news_headline(raw_title: str, source: str) -> str:
         emoji = "🚀🌕"
     elif any(k in lower_t for k in ["cctv", "saved", "dog", "hero", "accident"]):
         emoji = "❤️‍🩹🐾"
+    elif any(k in lower_t for k in ["turbulence", "flight", "plane", "airport"]):
+        emoji = "✈️⚠️"
 
-    # Split into 2 balanced lines
+    # Truncate to punchy viral hook if too long (max 14 words)
     words = clean.split()
+    if len(words) > 14:
+        clean = " ".join(words[:14])
+        words = clean.split()
+
     if len(words) > 7:
         mid = len(words) // 2
         line1 = " ".join(words[:mid]).upper()
@@ -157,6 +202,72 @@ def generate_news_ig_caption(headline: str, source: str) -> str:
         f"What is your thought on this? Drop an 🇮🇳 in the comments below! 👇\n.\n"
         f"#aryafeed #breakingnews #indianews #currentaffairs #explorepage #reelsindia #instanews #trending"
     )
+
+
+def download_editorial_image(url: str, output_path: Path) -> bool:
+    """Download news editorial photo with browser headers and convert to RGB JPEG."""
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        safe_path = urllib.parse.quote(parsed.path)
+        safe_url = urllib.parse.urlunsplit(parsed._replace(path=safe_path))
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Referer": "https://www.google.com/",
+        }
+        req = urllib.request.Request(safe_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = resp.read()
+
+        with Image.open(io.BytesIO(data)) as im:
+            if im.width < 250 or im.height < 180:
+                logger.warning(f"[LiveNews] Image too small ({im.size}) from {url}")
+                return False
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            im.convert("RGB").save(output_path, "JPEG", quality=95)
+            logger.info(f"[LiveNews] Successfully saved news photo: {im.size} to {output_path}")
+            return True
+    except Exception as e:
+        logger.warning(f"[LiveNews] Failed downloading article image from {url}: {e}")
+        return False
+
+
+def search_subject_image(query: str, output_path: Path) -> bool:
+    """Fallback: Search Bing image index for the exact news subject and save high-res photo."""
+    try:
+        clean_q = urllib.parse.quote_plus(f"{query} news india")
+        url = f"https://www.bing.com/images/async?q={clean_q}&first=1&count=8"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+
+        murls = re.findall(r'murl&quot;:&quot;(https?://[^&]+)&quot;', html)
+        for cand_url in murls[:6]:
+            if download_editorial_image(cand_url, output_path):
+                logger.info(f"[LiveNews] Found and downloaded subject photo via web search: {cand_url}")
+                return True
+        return False
+    except Exception as e:
+        logger.warning(f"[LiveNews] Subject search failed for '{query}': {e}")
+        return False
+
+
+def create_editorial_fallback_backdrop(output_path: Path) -> None:
+    """Create a sleek, dark editorial news backdrop if all internet image sources fail."""
+    cw, ch = 1080, 1920
+    im = Image.new("RGB", (cw, ch), (10, 14, 24))
+    draw = ImageDraw.Draw(im)
+    for y in range(ch):
+        r = int(10 + (28 - 10) * (y / ch))
+        g = int(14 + (36 - 14) * (y / ch))
+        b = int(24 + (52 - 24) * (y / ch))
+        draw.line([(0, y), (cw, y)], fill=(r, g, b))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    im.save(output_path, "JPEG", quality=95)
 
 
 class LiveNewsService:
@@ -189,14 +300,30 @@ class LiveNewsService:
                         continue
 
                     title = t_elem.text.strip()
-                    link = l_elem.text.strip() if l_elem is not None else ""
-                    source = s_elem.text.strip() if s_elem is not None and s_elem.text else "News"
-                    pub_date = pub_elem.text.strip() if pub_elem is not None else ""
+                    link = l_elem.text.strip() if l_elem is not None and l_elem.text else ""
+                    source = s_elem.text.strip() if (s_elem is not None and s_elem.text) else feed.get("publisher", "News")
+                    pub_date = pub_elem.text.strip() if pub_elem is not None and pub_elem.text else ""
 
                     # Filter out dry political jargon
                     t_lower = title.lower()
                     if any(term in t_lower for term in IGNORE_TERMS):
                         continue
+
+                    # Extract real news subject photo from XML
+                    image_url = None
+                    for child in item:
+                        tag = child.tag.lower()
+                        if any(k in tag for k in ['content', 'thumbnail', 'enclosure']):
+                            u = child.get('url')
+                            if u and ('http' in u):
+                                image_url = u
+                                break
+                    if not image_url:
+                        desc = item.find('description')
+                        if desc is not None and desc.text:
+                            m = re.search(r'src=["\'](https?://[^"\'>\s]+)["\']', desc.text)
+                            if m:
+                                image_url = m.group(1)
 
                     news_hash = hashlib.md5(title.encode("utf-8")).hexdigest()
 
@@ -209,6 +336,7 @@ class LiveNewsService:
                         "link": link,
                         "source": source,
                         "pub_date": pub_date,
+                        "image_url": image_url,
                         "is_viral": is_viral,
                     })
             except Exception as e:
@@ -222,8 +350,8 @@ class LiveNewsService:
 
         fresh = [a for a in articles if a["hash"] not in published_hashes]
 
-        # Prioritize viral items first
-        fresh.sort(key=lambda x: x["is_viral"], reverse=True)
+        # Prioritize viral items first, then items with direct editorial photos
+        fresh.sort(key=lambda x: (x["is_viral"], bool(x["image_url"])), reverse=True)
         return fresh[:limit]
 
     async def create_and_publish_news_reel(
@@ -232,7 +360,7 @@ class LiveNewsService:
         auto_post: bool = True,
         bot=None,
     ) -> Dict[str, Any]:
-        """Fetch top breaking news, render 1080x1920 reel with [ ARYAFEED ], and post to Instagram."""
+        """Fetch top breaking news, acquire real photo, render 1080x1920 reel with [ ARYAFEED ], and post to Instagram."""
         fresh = await self.fetch_fresh_articles(limit=5)
         if not fresh:
             logger.info("[LiveNews] No fresh breaking news available right now.")
@@ -248,22 +376,31 @@ class LiveNewsService:
 
         logger.info(f"[LiveNews] Processing breaking news: {headline} (Source: {source})")
 
-        # Pick background image from categories/news
-        news_img_dir = Path("assets/images/categories/news")
-        if news_img_dir.exists():
-            img_candidates = list(news_img_dir.glob("*.jpg"))
-        else:
-            img_candidates = list(Path("assets/images").glob("**/*.jpg"))
-
-        if not img_candidates:
-            return {"success": False, "error": "No backdrop images found in assets."}
-
-        chosen_img = random.choice(img_candidates)
-
-        # Deploy chosen image to input directory
+        # Acquire the REAL news subject photo (NEVER candid girl photos)
         timestamp = int(time.time())
         deployed_img = config.input_dir / f"{chat_id}_news_{timestamp}.jpg"
-        shutil.copy(chosen_img, deployed_img)
+        img_acquired = False
+
+        if target_article.get("image_url"):
+            logger.info(f"[LiveNews] Downloading editorial photo from feed: {target_article['image_url']}")
+            img_acquired = await asyncio.to_thread(
+                download_editorial_image, target_article["image_url"], deployed_img
+            )
+
+        if not img_acquired:
+            # Fallback to targeted search for the exact story subject
+            search_query = re.sub(r'[^a-zA-Z0-9\s]', ' ', raw_title).strip()
+            words = [w for w in search_query.split() if len(w) > 2][:6]
+            clean_q = " ".join(words)
+            logger.info(f"[LiveNews] Feed image missing/failed, searching news subject image for: {clean_q}")
+            img_acquired = await asyncio.to_thread(
+                search_subject_image, clean_q, deployed_img
+            )
+
+        if not img_acquired:
+            # Fallback to sleek editorial news backdrop
+            logger.info("[LiveNews] Search failed, generating dark editorial backdrop")
+            await asyncio.to_thread(create_editorial_fallback_backdrop, deployed_img)
 
         # Record in reel session
         await db_manager.start_reel_session(chat_id)

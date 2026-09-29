@@ -39,24 +39,61 @@ def run_ffmpeg_command(cmd: list) -> None:
 
 def prepare_base_image(image_path: Path, output_path: Path) -> Path:
     """Prepare a crisp 1080x1920 base canvas using Pillow (instant, <10MB RAM)."""
-    from PIL import Image, ImageFilter
+    from PIL import Image, ImageFilter, ImageDraw
     cw, ch = 1080, 1920
-    with Image.open(image_path) as im:
-        im = im.convert("RGB")
-        im_ratio = im.width / im.height
-        c_ratio = cw / ch
-        if abs(im_ratio - c_ratio) < 0.02:
-            base = im.resize((cw, ch), Image.Resampling.LANCZOS)
+    with Image.open(image_path) as raw:
+        raw = raw.convert("RGBA")
+        iw, ih = raw.size
+        aspect_img = iw / ih
+
+        # Background: blurred and darkened atmospheric version
+        bg = raw.resize((cw // 4, ch // 4), Image.Resampling.BOX)
+        bg = bg.filter(ImageFilter.GaussianBlur(12))
+        bg = bg.resize((cw, ch), Image.Resampling.BILINEAR)
+        dark_tint = Image.new("RGBA", (cw, ch), (8, 8, 12, 190))
+        bg = Image.alpha_composite(bg, dark_tint)
+
+        if aspect_img > 1.15:  # Landscape editorial news photo (e.g. 16:9, 4:3)
+            # Scale to fit width 1080
+            target_w = cw
+            target_h = int(ih * (target_w / iw))
+            photo_y = 150
+            if target_h > 1000:
+                target_h = 1000
+                target_w = int(iw * (target_h / ih))
+                photo_x = (cw - target_w) // 2
+            else:
+                photo_x = 0
+
+            fg = raw.resize((target_w, target_h), Image.Resampling.LANCZOS)
+
+            # Smooth bottom fade mask so photo blends organically into dark lower canvas
+            fade_h = int(target_h * 0.25)
+            mask = Image.new("L", (target_w, target_h), 255)
+            mdraw = ImageDraw.Draw(mask)
+            for y in range(target_h - fade_h, target_h):
+                val = int(255 * (1.0 - (y - (target_h - fade_h)) / fade_h))
+                mdraw.line([(0, y), (target_w, y)], fill=val)
+            fg.putalpha(mask)
+            bg.paste(fg, (photo_x, photo_y), fg)
+
+            # Deep dark gradient in lower portion for crystal clear text readability
+            grad = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+            gdraw = ImageDraw.Draw(grad)
+            start_grad = photo_y + target_h - fade_h
+            for y in range(start_grad, ch):
+                f = min(1.0, (y - start_grad) / max(1, ch - start_grad))
+                gdraw.line([(0, y), (cw, y)], fill=(8, 8, 12, int(230 * f)))
+            bg = Image.alpha_composite(bg, grad)
         else:
-            # Blurred background + fit foreground (fast downscaled blur)
-            bg = im.resize((cw // 4, ch // 4), Image.Resampling.BOX).filter(ImageFilter.GaussianBlur(8)).resize((cw, ch), Image.Resampling.BILINEAR)
-            scale = min(cw / im.width, ch / im.height)
-            new_w, new_h = max(1, int(im.width * scale)), max(1, int(im.height * scale))
-            fg = im.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            # Portrait or square: center fit
+            scale = min(cw / iw, ch / ih)
+            new_w, new_h = max(1, int(iw * scale)), max(1, int(ih * scale))
+            fg = raw.resize((new_w, new_h), Image.Resampling.LANCZOS)
             bg.paste(fg, ((cw - new_w) // 2, (ch - new_h) // 2))
-            base = bg
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        base.save(output_path, "JPEG", quality=95)
+        bg.convert("RGB").save(output_path, "JPEG", quality=95)
     return output_path
 
 

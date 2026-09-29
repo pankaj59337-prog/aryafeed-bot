@@ -52,6 +52,9 @@ HIGHLIGHT_KEYWORDS: Set[str] = {
     "trophy", "champion", "ipl", "bcci", "india", "isro", "scandal", "unbelievable",
     "secret", "hero", "shameful", "justice", "truth", "revealed", "cctv", "caught",
     "ias", "ips", "upsc", "neet", "jee", "billionaire", "richest", "shocker",
+    "court", "delhi", "panel", "cji", "modi", "kohli", "rohit", "dhoni", "rapido",
+    "swiggy", "zomato", "killed", "encounter", "cisf", "jawan", "terrorist", "flight",
+    "bizarre", "medal", "scooter", "dog", "first", "millionaire",
 }
 
 
@@ -111,24 +114,33 @@ def load_font(font_path: Path, size: int) -> ImageFont.FreeTypeFont:
 
 def extract_source_tag(raw_text: str) -> Tuple[str, Optional[str]]:
     """Extract source citation like [Per NDTV] or 'Per Hindustan Times' if present."""
-    m = re.match(r"^\[?(Per\s+[A-Za-z0-9\s]+|Source:\s*[A-Za-z0-9\s]+)\]?\s*[:-]?\s*", raw_text, re.IGNORECASE)
-    if m:
-        source = m.group(1).strip("[] ")
-        rest = raw_text[m.end():].strip()
+    # Match at the end: e.g. "HEADLINE... [Per Indian Express]" or "HEADLINE... [Source: NDTV]"
+    m_end = re.search(r"\s*\[?(Per\s+[A-Za-z0-9\s]+|Source:\s*[A-Za-z0-9\s]+)\]?\s*$", raw_text, re.IGNORECASE)
+    if m_end:
+        source = m_end.group(1).strip("[] ")
+        rest = raw_text[:m_end.start()].strip()
         return rest, source
+
+    # Match at the start: e.g. "[Per NDTV] HEADLINE..."
+    m_start = re.match(r"^\[?(Per\s+[A-Za-z0-9\s]+|Source:\s*[A-Za-z0-9\s]+)\]?\s*[:-]?\s*", raw_text, re.IGNORECASE)
+    if m_start:
+        source = m_start.group(1).strip("[] ")
+        rest = raw_text[m_start.end():].strip()
+        return rest, source
+
     return raw_text, None
 
 
 def draw_brand_watermark(
     canvas: Image.Image,
-    brand: str = "ARYAFEED.IN",
+    brand: str = "ARYAFEED",
     font_path: Optional[Path] = None,
-    position: str = "top",
+    position: str = "bottom_right",
     bg_color: Tuple[int, int, int, int] = (255, 220, 0, 255),
     text_color: Tuple[int, int, int, int] = (10, 10, 10, 255),
     source_text: Optional[str] = None,
 ) -> None:
-    """Draw signature [ ARYAFEED.IN ] yellow media pill watermark badge on canvas."""
+    """Draw signature [ ARYAFEED ] yellow media pill watermark badge on canvas."""
     draw = ImageDraw.Draw(canvas)
     badge_text = brand.upper().strip()
     if not badge_text:
@@ -138,18 +150,18 @@ def draw_brand_watermark(
         font_path = config.font_path
 
     # Bold font for brand pill
-    badge_font_size = 36
+    badge_font_size = 34
     badge_font = load_font(font_path, badge_font_size)
 
     bbox = draw.textbbox((0, 0), badge_text, font=badge_font)
     tw = bbox[2] - bbox[0]
     th = bbox[3] - bbox[1]
 
-    pad_x = 28
+    pad_x = 26
     pad_y = 10
     badge_w = tw + (pad_x * 2)
     badge_h = th + (pad_y * 2)
-    radius = 16
+    radius = 14
 
     if position == "top":
         badge_x = (CANVAS_WIDTH - badge_w) // 2
@@ -157,13 +169,16 @@ def draw_brand_watermark(
     elif position == "top_left":
         badge_x = SAFE_MARGIN_X
         badge_y = SAFE_MARGIN_TOP + 20
-    else:  # bottom
+    elif position in ("bottom_right", "right_bottom"):
+        badge_x = CANVAS_WIDTH - 60 - badge_w
+        badge_y = CANVAS_HEIGHT - 240 - badge_h
+    else:  # bottom center
         badge_x = (CANVAS_WIDTH - badge_w) // 2
         badge_y = CANVAS_HEIGHT - SAFE_MARGIN_BOTTOM - badge_h - 20
 
     # 1. Soft atmospheric drop shadow behind pill
     draw.rounded_rectangle(
-        (badge_x - 1, badge_y + 4, badge_x + badge_w + 1, badge_y + badge_h + 5),
+        (badge_x - 1, badge_y + 3, badge_x + badge_w + 1, badge_y + badge_h + 4),
         radius=radius,
         fill=(0, 0, 0, 160),
     )
@@ -180,28 +195,40 @@ def draw_brand_watermark(
     text_y = badge_y + pad_y - bbox[1]
     draw.text((text_x, text_y), badge_text, font=badge_font, fill=text_color)
 
-    # 4. Optional source citation badge (e.g. "Per NDTV")
+    # 4. Optional source citation badge (e.g. "SOURCE: INDIAN EXPRESS")
     if source_text:
         src_clean = source_text.strip().upper()
-        src_font_size = 28
+        if not src_clean.startswith("SOURCE:"):
+            src_clean = f"SOURCE: {src_clean.replace('PER ', '')}"
+        src_font_size = 26
         src_font = load_font(font_path, src_font_size)
         s_bbox = draw.textbbox((0, 0), src_clean, font=src_font)
         s_tw = s_bbox[2] - s_bbox[0]
         s_th = s_bbox[3] - s_bbox[1]
-        s_pad_x = 18
-        s_pad_y = 6
+        s_pad_x = 20
+        s_pad_y = 8
         s_w = s_tw + (s_pad_x * 2)
         s_h = s_th + (s_pad_y * 2)
-        s_x = (CANVAS_WIDTH - s_w) // 2
-        s_y = badge_y + badge_h + 12
 
-        # Translucent dark pill for source
+        if position in ("bottom_right", "right_bottom"):
+            s_x = 60
+            s_y = badge_y + (badge_h - s_h) // 2
+        elif position == "top":
+            s_x = (CANVAS_WIDTH - s_w) // 2
+            s_y = badge_y + badge_h + 12
+        else:
+            s_x = (CANVAS_WIDTH - s_w) // 2
+            s_y = badge_y + badge_h + 12
+
+        # Translucent dark pill with subtle border for source
         draw.rounded_rectangle(
             (s_x, s_y, s_x + s_w, s_y + s_h),
             radius=12,
-            fill=(20, 20, 20, 190),
+            fill=(20, 20, 25, 200),
+            outline=(80, 80, 90, 150),
+            width=1,
         )
-        draw.text((s_x + s_pad_x - s_bbox[0], s_y + s_pad_y - s_bbox[1]), src_clean, font=src_font, fill=(230, 230, 230, 240))
+        draw.text((s_x + s_pad_x - s_bbox[0], s_y + s_pad_y - s_bbox[1]), src_clean, font=src_font, fill=(220, 220, 220, 240))
 
 
 def wrap_text(text: str, font: ImageFont.ImageFont, max_width: int, draw: ImageDraw.ImageDraw) -> List[str]:
@@ -325,7 +352,7 @@ def create_text_overlay(
         canvas=canvas,
         brand=brand_name,
         font_path=font_path,
-        position="top",
+        position="bottom_right",
         bg_color=badge_bg,
         source_text=source_tag,
     )
@@ -472,31 +499,54 @@ def generate_preview_composite(
     template = get_template(template_key)
     create_text_overlay(text, template, temp_overlay)
 
-    from PIL import ImageFilter
+    from PIL import ImageFilter, ImageDraw
 
     with Image.open(image_path) as raw_img:
         raw_img = raw_img.convert("RGBA")
+        iw, ih = raw_img.size
+        aspect_img = iw / ih
 
-        # Fit into 1080x1920 with blurred background (matching video reel presentation)
-        bg = raw_img.resize((CANVAS_WIDTH, CANVAS_HEIGHT), Image.Resampling.LANCZOS)
-        bg = bg.filter(ImageFilter.GaussianBlur(radius=25))
+        # Background: blurred and darkened atmospheric version
+        bg = raw_img.resize((CANVAS_WIDTH // 4, CANVAS_HEIGHT // 4), Image.Resampling.BOX)
+        bg = bg.filter(ImageFilter.GaussianBlur(12))
+        bg = bg.resize((CANVAS_WIDTH, CANVAS_HEIGHT), Image.Resampling.BILINEAR)
+        dark_tint = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (8, 8, 12, 190))
+        bg = Image.alpha_composite(bg, dark_tint)
 
-        # Calculate aspect-ratio fit for foreground candid
-        img_w, img_h = raw_img.size
-        aspect_img = img_w / img_h
-        aspect_canvas = CANVAS_WIDTH / CANVAS_HEIGHT
+        if aspect_img > 1.15:  # Landscape editorial news photo
+            target_w = CANVAS_WIDTH
+            target_h = int(ih * (target_w / iw))
+            photo_y = 150
+            if target_h > 1000:
+                target_h = 1000
+                target_w = int(iw * (target_h / ih))
+                photo_x = (CANVAS_WIDTH - target_w) // 2
+            else:
+                photo_x = 0
 
-        if aspect_img > aspect_canvas:
-            new_w = CANVAS_WIDTH
-            new_h = int(CANVAS_WIDTH / aspect_img)
+            fg = raw_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+            fade_h = int(target_h * 0.25)
+            mask = Image.new("L", (target_w, target_h), 255)
+            mdraw = ImageDraw.Draw(mask)
+            for y in range(target_h - fade_h, target_h):
+                val = int(255 * (1.0 - (y - (target_h - fade_h)) / fade_h))
+                mdraw.line([(0, y), (target_w, y)], fill=val)
+            fg.putalpha(mask)
+            bg.paste(fg, (photo_x, photo_y), fg)
+
+            # Deep dark gradient in lower portion for text readability
+            grad = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
+            gdraw = ImageDraw.Draw(grad)
+            start_grad = photo_y + target_h - fade_h
+            for y in range(start_grad, CANVAS_HEIGHT):
+                f = min(1.0, (y - start_grad) / max(1, CANVAS_HEIGHT - start_grad))
+                gdraw.line([(0, y), (CANVAS_WIDTH, y)], fill=(8, 8, 12, int(230 * f)))
+            bg = Image.alpha_composite(bg, grad)
         else:
-            new_h = CANVAS_HEIGHT
-            new_w = int(CANVAS_HEIGHT * aspect_img)
-
-        fg = raw_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        paste_x = (CANVAS_WIDTH - new_w) // 2
-        paste_y = (CANVAS_HEIGHT - new_h) // 2
-        bg.paste(fg, (paste_x, paste_y), fg if fg.mode == "RGBA" else None)
+            scale = min(CANVAS_WIDTH / iw, CANVAS_HEIGHT / ih)
+            new_w, new_h = max(1, int(iw * scale)), max(1, int(ih * scale))
+            fg = raw_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            bg.paste(fg, ((CANVAS_WIDTH - new_w) // 2, (CANVAS_HEIGHT - new_h) // 2))
 
         with Image.open(temp_overlay) as txt_img:
             composite = Image.alpha_composite(bg, txt_img.convert("RGBA"))
