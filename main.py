@@ -107,6 +107,11 @@ async def periodic_cleanup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log uncaught exceptions to prevent bot from crashing."""
+    err_str = str(context.error) if context and context.error else ""
+    if "Conflict" in err_str or "terminated by other getUpdates" in err_str:
+        logger.warning(f"[Deploy] Handled transient Telegram conflict during container handoff: {err_str}")
+        return
+
     logger.error("Exception occurred while handling an update:", exc_info=context.error)
     if isinstance(update, Update) and update.effective_message:
         try:
@@ -119,9 +124,8 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
 
 async def render_keep_alive_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Periodically ping Render web service to prevent Free Tier from sleeping."""
-    import os
     import urllib.request
-    url = os.environ.get("RENDER_EXTERNAL_URL") or "https://aryafeed-engine-bot.onrender.com/"
+    url = "https://insta-reel-maker-bot.onrender.com/"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "RenderKeepAlive/1.0"})
         with urllib.request.urlopen(req, timeout=20) as resp:
@@ -300,7 +304,7 @@ def start_health_server() -> None:
         # Additional daemon thread pinger for Render 24/7 uptime
         def _daemon_pinger():
             time.sleep(45)
-            url = os.environ.get("RENDER_EXTERNAL_URL") or "https://aryafeed-engine-bot.onrender.com/"
+            url = "https://insta-reel-maker-bot.onrender.com/"
             while True:
                 try:
                     req = urllib.request.Request(url, headers={"User-Agent": "DaemonKeepAlive/1.0"})
@@ -322,8 +326,17 @@ async def main_async() -> None:
     await app.initialize()
     await app.start()
     if app.updater:
-        await app.updater.start_polling(drop_pending_updates=False)
-    logger.info("🚀 AryaFeed Engine Bot is running and polling for updates...")
+        for attempt in range(12):
+            try:
+                await app.updater.start_polling(drop_pending_updates=True, bootstrap_retries=5)
+                break
+            except Exception as e:
+                if "Conflict" in str(e) or "terminated by other getUpdates" in str(e):
+                    logger.warning(f"[Deploy] Telegram conflict (old instance shutting down). Retrying in 5s (attempt {attempt+1}/12)...")
+                    await asyncio.sleep(5)
+                else:
+                    raise
+    logger.info("🚀 Night Thought Reel Bot is running and polling for updates...")
 
     try:
         while True:
