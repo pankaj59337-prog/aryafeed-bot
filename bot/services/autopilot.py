@@ -29,7 +29,11 @@ from database.db import db_manager
 
 logger = logging.getLogger(__name__)
 
-IST = ZoneInfo("Asia/Kolkata")
+try:
+    IST = ZoneInfo("Asia/Kolkata")
+except Exception:
+    import datetime as _dt
+    IST = _dt.timezone(_dt.timedelta(hours=5, minutes=30), name="IST")
 DEFAULT_ADMIN_CHAT_ID = 5381201341
 
 # Store pending auto-post tasks: post_id -> {chat_id, video_path, caption, target_time, status}
@@ -69,10 +73,6 @@ CATEGORY_HASHTAGS: Dict[str, List[str]] = {
         "#aestheticvideos", "#peaceofmind", "#softlife", "#calmvibes",
         "#natureaesthetic", "#slowliving", "#chaiandsupper", "#healingjourney",
     ],
-    "news": [
-        "#aryafeed", "#trendingnews", "#indiannews", "#exploreindia",
-        "#breakingnews", "#indiatoday", "#viralnews", "#dailyupdates",
-    ],
 }
 
 # Micro-CTAs driving 2026 algorithmic signals (Saves, Shares & Comments)
@@ -83,13 +83,6 @@ CATEGORY_CTAS: Dict[str, List[str]] = {
         "Tag someone who makes you feel this way 🤍",
         "Drop a '❤️' if you felt every word.",
     ],
-    "news": [
-        "What are your thoughts on this? Tell us in the comments 👇",
-        "Do you agree with this? Share your opinion below 👇",
-        "Tag a friend who needs to see this update 📢",
-        "Drop your honest opinion in the comments 👇",
-    ],
-
     "sexy": [
         "Save this for the late night mood 🔥✨",
         "Send this to someone who can't handle your vibe 💋",
@@ -137,9 +130,9 @@ CATEGORY_CTAS: Dict[str, List[str]] = {
 
 def generate_viral_ig_caption(category: str, hook_text: str) -> str:
     """Generate high-converting caption with micro-CTA and targeted niche tags."""
-    cat = category.lower().strip() if category else "news"
-    ctas = CATEGORY_CTAS.get(cat, CATEGORY_CTAS["news"])
-    tags = CATEGORY_HASHTAGS.get(cat, CATEGORY_HASHTAGS["news"])
+    cat = category.lower().strip() if category else "romantic"
+    ctas = CATEGORY_CTAS.get(cat, CATEGORY_CTAS["romantic"])
+    tags = CATEGORY_HASHTAGS.get(cat, CATEGORY_HASHTAGS["romantic"])
 
     cta = random.choice(ctas)
     tag_str = " ".join(tags)
@@ -151,10 +144,10 @@ def generate_viral_ig_caption(category: str, hook_text: str) -> str:
 DAILY_SLOTS = [
     {
         "name": "slot_afternoon_lunch",
-        "categories": ["news", "news_banner"],
-        "category": "news_banner",
-        "title": "AryaFeed Afternoon News Bulletin",
-        "icon": "⚡",
+        "categories": ["romantic", "traditional", "aesthetic", "bestie"],
+        "category": "romantic",
+        "title": "Daytime Aesthetic & Desi Romance",
+        "icon": "💖",
         "delivery_time_str": "01:20 PM IST",
         "target_post_time_str": "01:30 PM IST",
         "hour": 13,
@@ -162,10 +155,10 @@ DAILY_SLOTS = [
     },
     {
         "name": "slot_prime_night",
-        "categories": ["news", "news_card"],
-        "category": "news_card",
-        "title": "AryaFeed Prime Evening News Card",
-        "icon": "📰",
+        "categories": ["cinematic", "sexy", "broken", "baddie"],
+        "category": "sexy",
+        "title": "Prime Night / Flirty & Cinematic",
+        "icon": "🌙",
         "delivery_time_str": "09:20 PM IST",
         "target_post_time_str": "09:30 PM IST",
         "hour": 21,
@@ -502,7 +495,7 @@ async def generate_and_deliver_scheduled_reel(
 async def execute_autopilot_slot_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Job callback triggered by APScheduler / JobQueue at scheduled delivery times."""
     job_data = context.job.data or {}
-    category_pool = job_data.get("categories", [job_data.get("category", "news_banner")])
+    category_pool = job_data.get("categories", [job_data.get("category", "romantic")])
     target_time_str = job_data.get("target_post_time_str", "08:00 PM IST")
     delivery_time_str = job_data.get("delivery_time_str", "07:50 PM IST")
 
@@ -586,7 +579,7 @@ async def autopilot_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await generate_and_deliver_scheduled_reel(
                 bot=context.bot,
                 chat_id=chat_id,
-                category="news_banner",
+                category="romantic",
                 target_time_str="08:00 PM IST",
                 delivery_time_str="07:50 PM IST",
                 job_queue=context.job_queue,
@@ -750,7 +743,7 @@ async def handle_autopilot_callbacks(update: Update, context: ContextTypes.DEFAU
         )
 
     elif data == "autopilot_test_now":
-        categories = ["news_banner", "news_card", "news"]
+        categories = ["romantic", "sexy", "baddie", "broken", "cinematic", "traditional", "bestie", "aesthetic"]
         test_cat = random.choice(categories)
         await query.edit_message_text(
             f"🧪 *Testing AutoPilot Reel Generation ({test_cat.title()})...*\nGenerating reel with 10-minute advance alert...",
