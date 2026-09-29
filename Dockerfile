@@ -24,5 +24,8 @@ COPY . .
 # Ensure data directories exist
 RUN mkdir -p data/input data/output data/temp data/audio data/sessions assets/fonts assets/music/bollywood assets/images/candid assets/images/used assets/images/categories/sexy assets/images/categories/baddie assets/images/categories/bestie assets/images/categories/romantic assets/images/categories/cinematic assets/images/categories/traditional assets/images/categories/broken assets/images/categories/aesthetic database
 
+# Expose healthcheck and keepalive port
+EXPOSE 10000
+
 # Run bot
 CMD ["python", "main.py"]
