@@ -13,13 +13,11 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 # 1. Early Healthcheck & Keepalive Server (Booted immediately for Cloud Platforms)
 # ---------------------------------------------------------------------------
 def _run_early_health_server() -> None:
-    port_str = os.environ.get("PORT")
-    if not port_str:
-        return
+    port_str = os.environ.get("PORT", "10000").strip()
     try:
-        port = int(port_str)
+        port = int(port_str) if port_str else 10000
     except ValueError:
-        return
+        port = 10000
 
     class HealthHandler(BaseHTTPRequestHandler):
         def do_GET(self):
