@@ -5,11 +5,12 @@ Provides:
 2. Challenge / 2FA Handling
 3. Auto-Posting Integration
 """
+from __future__ import annotations
 
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from instagrapi import Client
 from instagrapi.exceptions import (
     BadPassword,
