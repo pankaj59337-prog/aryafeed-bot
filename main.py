@@ -119,8 +119,9 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
 
 async def render_keep_alive_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Periodically ping Render web service to prevent Free Tier from sleeping."""
+    import os
     import urllib.request
-    url = "https://insta-reel-maker-bot.onrender.com/"
+    url = os.environ.get("RENDER_EXTERNAL_URL") or "https://aryafeed-engine-bot.onrender.com/"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "RenderKeepAlive/1.0"})
         with urllib.request.urlopen(req, timeout=20) as resp:
@@ -299,7 +300,7 @@ def start_health_server() -> None:
         # Additional daemon thread pinger for Render 24/7 uptime
         def _daemon_pinger():
             time.sleep(45)
-            url = "https://insta-reel-maker-bot.onrender.com/"
+            url = os.environ.get("RENDER_EXTERNAL_URL") or "https://aryafeed-engine-bot.onrender.com/"
             while True:
                 try:
                     req = urllib.request.Request(url, headers={"User-Agent": "DaemonKeepAlive/1.0"})

@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: insta-reel-maker-bot
+    name: aryafeed-engine-bot
     env: docker
     plan: free
     region: oregon
