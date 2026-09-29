@@ -314,3 +314,41 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         logger.exception(f"Error in news_command: {e}")
         await msg.edit_text(f"⚠️ *Error generating news reel:* {e}", parse_mode="Markdown")
 
+
+@restricted
+async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manually trigger competitor accounts scan and rebrand."""
+    chat_id = update.effective_chat.id
+    msg = await update.effective_message.reply_text(
+        "⚡ *Scanning 4 competitor accounts...*\n\n"
+        "• `@rvcjinsta`\n"
+        "• `@flirting.lines`\n"
+        "• `@comedyculture.in`\n"
+        "• `@adultsociety`\n\n"
+        "_Checking for fresh clean vs branded posts..._",
+        parse_mode="Markdown"
+    )
+
+    from bot.services.competitor_monitor import competitor_monitor_service
+    try:
+        results = await competitor_monitor_service.scan_and_rebrand_competitors(
+            chat_id=chat_id,
+            bot=context.bot,
+        )
+        if not results:
+            await msg.edit_text(
+                "✅ *Scan Complete!*\n\n"
+                "No new unposted media found from the 4 accounts right now, or Instagram session requires /insta_login.\n\n"
+                "_All previous posts are tracked in database._",
+                parse_mode="Markdown"
+            )
+        else:
+            await msg.edit_text(
+                f"🎉 *Scan Complete!* Processed {len(results)} fresh posts from competitor feeds!",
+                parse_mode="Markdown"
+            )
+    except Exception as e:
+        logger.exception(f"Error in scout_command: {e}")
+        await msg.edit_text(f"⚠️ *Scout Error:* {e}", parse_mode="Markdown")
+
+

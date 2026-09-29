@@ -160,6 +160,7 @@ from bot.handlers.commands import (
     handle_sync_folder_callback,
     templates_command,
     news_command,
+    scout_command,
 )
 from bot.handlers.media import (
     handle_document_media,
@@ -389,6 +390,7 @@ async def setup_bot() -> Application:
     app.add_handler(CommandHandler("insta_graph", insta_graph_command))
     app.add_handler(CommandHandler("insta_graph_status", insta_graph_status_command))
     app.add_handler(CommandHandler(["news", "breaking"], news_command))
+    app.add_handler(CommandHandler(["scout", "competitors"], scout_command))
 
     # Register Global Error Handler
     app.add_error_handler(global_error_handler)
@@ -411,6 +413,19 @@ async def setup_bot() -> Application:
         except Exception as e:
             logger.warning(f"[PeriodicNews] Autonomous news check error: {e}")
 
+    async def periodic_competitor_monitor_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Autonomous scout: checks 4 competitor accounts for fresh clean/branded media."""
+        from bot.services.competitor_monitor import competitor_monitor_service
+        try:
+            target_chat = config.admin_telegram_id or 5381201341
+            logger.info(f"[PeriodicCompetitor] Scanning 4 competitor accounts for chat {target_chat}...")
+            await competitor_monitor_service.scan_and_rebrand_competitors(
+                chat_id=target_chat,
+                bot=context.bot,
+            )
+        except Exception as e:
+            logger.warning(f"[PeriodicCompetitor] Autonomous competitor check error: {e}")
+
     # Register Periodic Cleanup Job, Keep-Alive Job & Daily AutoPilot Schedulers
     if app.job_queue:
         app.job_queue.run_repeating(periodic_cleanup_job, interval=3600, first=60)
@@ -419,6 +434,8 @@ async def setup_bot() -> Application:
         logger.info("Registered 24/7 Keep-Alive ping job (interval: 3 mins)")
         app.job_queue.run_repeating(periodic_news_monitor_job, interval=3600, first=60)
         logger.info("Registered Autonomous Breaking News monitor job (interval: 1 hour)")
+        app.job_queue.run_repeating(periodic_competitor_monitor_job, interval=1800, first=90)
+        logger.info("Registered Autonomous Competitor Scout monitor job (interval: 30 mins)")
         register_autopilot_jobs(app)
 
     return app
