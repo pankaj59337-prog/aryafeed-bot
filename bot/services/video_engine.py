@@ -124,11 +124,11 @@ def render_single_pass_image_reel(
     fade_out_st = max(0.0, duration - 1.5)
     fade_out_d = 1.5
 
-    # Ken Burns motion expression
+    # Ken Burns motion expression (subtle cinematic drift, smooth read pace)
     if template.ken_burns == "zoom_in":
-        zoom_expr = f"zoompan=z='min(1.0+0.0004*on,1.12)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={total_frames}:s=1080x1920:fps={fps}"
+        zoom_expr = f"zoompan=z='min(1.0+0.00015*on,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={total_frames}:s=1080x1920:fps={fps}"
     elif template.ken_burns == "zoom_out":
-        zoom_expr = f"zoompan=z='if(lte(zoom,1.0),1.12,max(1.001,zoom-0.0004*on))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={total_frames}:s=1080x1920:fps={fps}"
+        zoom_expr = f"zoompan=z='if(lte(zoom,1.0),1.08,max(1.001,zoom-0.00015*on))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={total_frames}:s=1080x1920:fps={fps}"
     else:
         zoom_expr = "format=yuv420p"
 

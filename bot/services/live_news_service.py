@@ -82,6 +82,15 @@ NEWS_FEEDS = [
     },
 ]
 
+# Dedicated focus: Delhi youth/student protest, CJI/CJP, and government crackdown
+PROTEST_KEYWORDS = [
+    "protest", "protests", "protesting", "jantar mantar", "detained", "detain",
+    "students", "youth", "cjp", "cji", "crackdown", "mogambo", "police lathi",
+    "lathi charge", "clash", "tear gas", "dhruv rathee", "rahul gandhi", "amit shah",
+    "delhi police", "section 144", "delhi university", "jnu", "barricade", "water cannon",
+    "rape", "assault", "justice", "scam", "andhbhakt", "patriarchy",
+]
+
 # Keywords that signal high virality / curiosity
 VIRAL_KEYWORDS = [
     "upsc", "exam", "cracks", "ias", "ips", "gold", "crore", "lakh",
@@ -165,8 +174,12 @@ def format_viral_news_headline(raw_title: str, source: str) -> str:
     # Choose emoji based on topic
     emoji = "⚡🇮🇳"
     lower_t = clean.lower()
-    if any(k in lower_t for k in ["upsc", "exam", "student", "teacher", "cracks"]):
+    if any(k in lower_t for k in ["protest", "protests", "jantar mantar", "detained", "delhi police", "mogambo", "students", "youth", "crackdown"]):
+        emoji = "🚨🇮🇳"
+    elif any(k in lower_t for k in ["upsc", "exam", "student", "teacher", "cracks"]):
         emoji = "🥹🎓"
+    elif any(k in lower_t for k in ["kohli", "rohit", "dhoni", "cricket", "ipl", "century", "odi", "t20", "bcci", "sixes", "wickets"]):
+        emoji = "🏏🔥"
     elif any(k in lower_t for k in ["gold", "medal", "wins", "champion", "trophy"]):
         emoji = "🏆🇮🇳"
     elif any(k in lower_t for k in ["swiggy", "zomato", "cash", "crore", "lakh", "money"]):
@@ -178,13 +191,20 @@ def format_viral_news_headline(raw_title: str, source: str) -> str:
     elif any(k in lower_t for k in ["turbulence", "flight", "plane", "airport"]):
         emoji = "✈️⚠️"
 
-    # Truncate to punchy viral hook if too long (max 14 words)
+    # Truncate to punchy viral hook if too long (max 18 words)
     words = clean.split()
-    if len(words) > 14:
-        clean = " ".join(words[:14])
+    if len(words) > 18:
+        clean = " ".join(words[:18])
         words = clean.split()
 
-    if len(words) > 7:
+    if len(words) >= 12:
+        part1 = len(words) // 3
+        part2 = (len(words) * 2) // 3
+        line1 = " ".join(words[:part1]).upper()
+        line2 = " ".join(words[part1:part2]).upper()
+        line3 = " ".join(words[part2:]).upper()
+        hook = f"{line1}\n{line2}\n{line3} {emoji}"
+    elif len(words) >= 7:
         mid = len(words) // 2
         line1 = " ".join(words[:mid]).upper()
         line2 = " ".join(words[mid:]).upper()
@@ -215,10 +235,11 @@ def download_editorial_image(url: str, output_path: Path) -> bool:
         parsed = urllib.parse.urlsplit(url)
         safe_path = urllib.parse.quote(parsed.path)
         safe_url = urllib.parse.urlunsplit(parsed._replace(path=safe_path))
+        origin = f"{parsed.scheme}://{parsed.netloc}/"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
             "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            "Referer": "https://www.google.com/",
+            "Referer": origin,
         }
         req = urllib.request.Request(safe_url, headers=headers)
         with urllib.request.urlopen(req, timeout=12) as resp:
@@ -339,7 +360,8 @@ class LiveNewsService:
 
                     news_hash = hashlib.md5(title.encode("utf-8")).hexdigest()
 
-                    # Score virality
+                    # Score protest focus and virality
+                    is_protest = any(k in t_lower for k in PROTEST_KEYWORDS)
                     is_viral = any(k in t_lower for k in VIRAL_KEYWORDS)
 
                     articles.append({
@@ -349,6 +371,7 @@ class LiveNewsService:
                         "source": source,
                         "pub_date": pub_date,
                         "image_url": image_url,
+                        "is_protest": is_protest,
                         "is_viral": is_viral,
                     })
             except Exception as e:
@@ -362,8 +385,8 @@ class LiveNewsService:
 
         fresh = [a for a in articles if a["hash"] not in published_hashes]
 
-        # Prioritize viral items first, then items with direct editorial photos
-        fresh.sort(key=lambda x: (x["is_viral"], bool(x["image_url"])), reverse=True)
+        # Lock priority: Protest breaking stories FIRST, then viral items, then editorial photos
+        fresh.sort(key=lambda x: (x.get("is_protest", False), x["is_viral"], bool(x["image_url"])), reverse=True)
         return fresh[:limit]
 
     async def create_and_publish_news_reel(

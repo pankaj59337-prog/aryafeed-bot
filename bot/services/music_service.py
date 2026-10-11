@@ -172,6 +172,15 @@ VOCAL_TRACKS: List[Dict[str, Any]] = [
         "icon": "🥀",
         "style_affinity": ["romantic", "broken", "cinematic", "sexy", "quote"],
     },
+    {
+        "id": "aarambh",
+        "file": "aarambh_slow_normal.mp3",
+        "title": "Aarambh Hai Prachand",
+        "artist": "Piyush Mishra",
+        "lyrics": "Aarambh hai prachand bole mastako ke jhund...",
+        "icon": "⚔️",
+        "style_affinity": ["news_banner", "news", "cinematic", "motivational", "cricket"],
+    },
 ]
 
 TRACK_METADATA: Dict[str, Dict[str, Any]] = {
