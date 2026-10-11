@@ -264,10 +264,10 @@ def add_music(
 
     if audio_path and audio_path.exists():
         if has_orig_audio:
-            # Duck original audio and mix with background music
+            # Duck background music under clear original speech (speech 1.0, bg music 0.18)
             filter_complex = (
-                f"[0:a]volume=0.3[orig];"
-                f"[1:a]volume=0.75,afade=t=in:st=0:d=2.0,afade=t=out:st={fade_out_st}:d=2.0[bg];"
+                f"[0:a]volume=1.0[orig];"
+                f"[1:a]volume=0.18,afade=t=in:st=0:d=1.0,afade=t=out:st={fade_out_st}:d=2.0[bg];"
                 f"[orig][bg]amix=inputs=2:duration=first:dropout_transition=2[a]"
             )
             cmd = [
