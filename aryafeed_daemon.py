@@ -549,8 +549,15 @@ def main():
     except Exception as e:
         logger.warning(f"Flush error: {e}")
 
+    logger.info("🟢 [24/7 Listener Active] Polling Telegram @aryafeed_engine_bot (Offset: %s)...", last_offset)
+    poll_count = 0
+
     while True:
         try:
+            poll_count += 1
+            if poll_count % 3 == 0:
+                logger.info("🟢 [Heartbeat] Bot alive & listening 24/7... (Ready for /give update, /auto upload)")
+
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={last_offset}&timeout=25"
             resp = requests.get(url, timeout=35)
             if resp.status_code == 200:
