@@ -1,15 +1,11 @@
-"""Media ingestion handlers: photos, videos, animations.
-Auto-stamps [ ARYAFEED ] watermark pill on bottom-right and provides 1-tap Instagram posting!
-"""
+"""Media ingestion handlers: photos, videos, animations."""
 
-import asyncio
 import logging
 from pathlib import Path
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.handlers.commands import restricted
-from bot.services.video_engine import stamp_image_watermark, stamp_video_watermark
 from bot.utils.config import config
 from database.db import db_manager
 
@@ -18,189 +14,135 @@ logger = logging.getLogger(__name__)
 
 @restricted
 async def reel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /reel command: directly launch the AryaFeed News Studio Preview."""
+    """Handle /reel command: ask user for category / vibe first."""
     chat_id = update.effective_chat.id
     await db_manager.start_reel_session(chat_id)
 
-    from bot.handlers.auto import send_interactive_studio_preview
+    from bot.handlers.auto import build_category_selection_keyboard
 
-    cat_id = "news_banner"
-    context.user_data["chosen_cat"] = cat_id
-    await send_interactive_studio_preview(
-        update,
-        context,
-        cat_id=cat_id,
-        force_new_img=True,
+    prompt = (
+        "🎬 *Reel Studio: Choose Your Category*\n\n"
+        "Please select the vibe / category for your reel first:\n\n"
+        "• 💋 *Sexy / Flirty Desi:* Bold candid selfies & sultry vibes\n"
+        "• 🔥 *Hot & Baddie / Attitude:* Sassy attitude & self-love\n"
+        "• 👯‍♀️ *Bestie Love / Duo Goals:* Cute bestie bonds & sisterhood\n"
+        "• 💖 *Romantic / Love:* Pastel sarees & heartwarming love lyrics\n"
+        "• 🎬 *Late Night / Cinematic:* Neon bokeh & late night thoughts\n"
+        "• 👑 *Desi Traditional:* Royal sarees & timeless shayari\n"
+        "• 💔 *Broken Heart / Dard:* Emotional heartbreak & soulful pain\n"
+        "• ✨ *Aesthetic / Soft Glow:* Golden hour & peaceful calm vibes\n\n"
+        "_(💡 Visuals, Bollywood songs & hooks will strictly adapt to your choice!)_"
     )
+    if update.effective_message:
+        await update.effective_message.reply_text(
+            prompt,
+            reply_markup=build_category_selection_keyboard(),
+            parse_mode="Markdown"
+        )
 
 
 @restricted
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle custom photo / meme card upload from user:
-    Immediately stamps [ ARYAFEED ] watermark (bottom-right yellow pill),
-    generates viral caption, and provides 1-tap Instagram post button + animated reel option!
-    """
+    """Handle custom photo upload from user: seamlessly plugs into interactive reel creation flow!"""
     chat_id = update.effective_chat.id
+    session = await db_manager.get_session(chat_id)
+
     photos = update.effective_message.photo
     if not photos:
         return
 
-    # Select highest resolution photo
+    # Select largest photo
     photo = photos[-1]
+
+    # Download file
     file = await photo.get_file()
     dest_path = config.input_dir / f"{chat_id}_{photo.file_unique_id}.jpg"
     await file.download_to_drive(custom_path=dest_path)
+
     logger.info(f"Custom user photo saved for chat {chat_id}: {dest_path}")
 
-    # 1. Stamp signature [ ARYAFEED ] yellow pill watermark at bottom-right
-    stamped_path = config.output_dir / f"stamped_{chat_id}_{photo.file_unique_id}.jpg"
-    try:
-        await asyncio.to_thread(stamp_image_watermark, dest_path, stamped_path, "ARYAFEED")
-    except Exception as e:
-        logger.exception(f"Failed to stamp image watermark: {e}")
-        stamped_path = dest_path
+    # Set context so subsequent steps know user uploaded their own image
+    context.user_data["custom_media_path"] = str(dest_path)
+    context.user_data["chosen_img"] = "custom_upload"
+    cat = context.user_data.get("chosen_cat") or (session.get("selected_template") if session else None) or "romantic"
+    context.user_data["chosen_cat"] = cat
 
-    # 2. Extract or generate caption
-    user_caption = update.effective_message.caption
-    if user_caption and len(user_caption.strip()) > 3:
-        clean_caption = user_caption.strip()
-        if "#aryafeed" not in clean_caption.lower():
-            clean_caption += "\n\n⚡ Follow @aryafeed.in for daily buzz & humor\n#aryafeed #trending #viral #memes #india"
-    else:
-        clean_caption = (
-            "⚡ Daily dose of viral stories, memes & thoughts!\n\n"
-            "👉 Follow @aryafeed.in for daily buzz 🔔\n"
-            "📩 DM for credits / collabs\n\n"
-            "#aryafeed #viral #trending #reels #memes #explore #india"
-        )
-
-    # 3. Save into DB session
     await db_manager.start_reel_session(chat_id)
     await db_manager.update_session(
         chat_id,
-        current_step="READY_TO_POST",
+        current_step="WAITING_TEXT_SELECTION",
         media_path=str(dest_path),
         media_type="image",
-        output_path=str(stamped_path),
-        selected_template="news_banner",
-        custom_caption=clean_caption,
+        selected_template=cat,
     )
 
-    context.user_data["custom_media_path"] = str(dest_path)
-    context.user_data["chosen_img"] = "custom_upload"
-    context.user_data["chosen_cat"] = "news_banner"
+    from bot.handlers.auto import get_fresh_hook_options, build_hook_selection_keyboard, get_category_info
+    cat_info = get_category_info(cat)
+    fresh_hooks = await get_fresh_hook_options(chat_id, category=cat, limit=5)
+    context.user_data["current_hook_options"] = fresh_hooks
 
-    # 4. Inline keyboard with 1-tap post & animated reel options
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🚀 1-Tap Post to Instagram", callback_data="post_insta"),
-        ],
-        [
-            InlineKeyboardButton("🎬 Convert to 7s Animated Reel", callback_data="auto_render_custom_reel"),
-        ]
-    ])
+    hooks_text = "\n".join([f"{idx}️⃣ _{h['text']}_" for idx, h in enumerate(fresh_hooks, start=1)])
 
-    # 5. Send stamped photo back to Telegram
-    with open(stamped_path, "rb") as pf:
-        await update.effective_message.reply_photo(
-            photo=pf,
-            caption=(
-                "⚡ *[ ARYAFEED ] Watermark Stamped!*\n\n"
-                "🏷️ **Brand:** `[ ARYAFEED ]` (Bottom Right)\n"
-                f"📝 **Caption:**\n_{clean_caption[:280]}..._\n\n"
-                "Tap below to publish live to `@aryafeed.in`:"
-            ),
-            reply_markup=keyboard,
-            parse_mode="Markdown",
-        )
+    msg = (
+        f"📸 *Custom Image Received & Loaded!*\n\n"
+        f"📂 *Vibe Style:* {cat_info['icon']} *{cat_info['title']}*\n\n"
+        f"Select 1 of 5 viral text quotes below, or type your own hook in chat:\n\n"
+        f"{hooks_text}\n\n"
+        f"_(💡 Next, an instant 1080x1920 preview with your photo + text will be shown!)_"
+    )
+
+    await update.effective_message.reply_text(
+        msg,
+        reply_markup=build_hook_selection_keyboard(fresh_hooks, category=cat),
+        parse_mode="Markdown",
+    )
 
 
 @restricted
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle video / reel / clip upload:
-    Immediately embeds [ ARYAFEED ] watermark (bottom-right yellow pill) via FFmpeg,
-    generates caption, and provides 1-tap Instagram Reel post button!
-    """
+    """Handle video upload from user."""
     chat_id = update.effective_chat.id
+    session = await db_manager.get_session(chat_id)
+
+    if not session or session.get("current_step") not in ("WAITING_MEDIA", "IDLE"):
+        await db_manager.start_reel_session(chat_id)
+
     video = update.effective_message.video or update.effective_message.animation
     if not video:
         return
 
+    # Check file size limit
     max_bytes = config.max_video_size_mb * 1024 * 1024
     if video.file_size and video.file_size > max_bytes:
         await update.effective_message.reply_text(
-            f"❌ Video exceeds maximum size limit of {config.max_video_size_mb} MB."
+            f"❌ Video exceeds maximum size limit of {config.max_video_size_mb} MB. Please upload a smaller video."
         )
         return
 
-    progress_msg = await update.effective_message.reply_text("⚡ *Downloading video...*", parse_mode="Markdown")
-
+    # Download file
     file = await video.get_file()
     ext = ".mp4" if not video.file_name else Path(video.file_name).suffix or ".mp4"
     dest_path = config.input_dir / f"{chat_id}_{video.file_unique_id}{ext}"
     await file.download_to_drive(custom_path=dest_path)
 
-    await progress_msg.edit_text("⚡ *Embedding [ ARYAFEED ] watermark into video...*", parse_mode="Markdown")
+    logger.info(f"Video saved for chat {chat_id}: {dest_path}")
 
-    stamped_video_path = config.output_dir / f"stamped_{chat_id}_{video.file_unique_id}.mp4"
-    try:
-        await asyncio.to_thread(stamp_video_watermark, dest_path, stamped_video_path, "ARYAFEED")
-    except Exception as e:
-        logger.exception(f"Video watermarking failed: {e}")
-        stamped_video_path = dest_path
-
-    # Extract or generate caption
-    user_caption = update.effective_message.caption
-    if user_caption and len(user_caption.strip()) > 3:
-        clean_caption = user_caption.strip()
-        if "#aryafeed" not in clean_caption.lower():
-            clean_caption += "\n\n⚡ Follow @aryafeed.in for daily buzz & humor\n#aryafeed #trending #viral #reels #india"
-    else:
-        clean_caption = (
-            "⚡ Daily dose of viral stories & reels!\n\n"
-            "👉 Follow @aryafeed.in for more 🔔\n"
-            "📩 DM for credits / collabs\n\n"
-            "#aryafeed #viral #trending #reels #explore #india"
-        )
-
-    await db_manager.start_reel_session(chat_id)
+    # Update database
     await db_manager.update_session(
         chat_id,
-        current_step="READY_TO_POST",
+        current_step="WAITING_TEXT",
         media_path=str(dest_path),
         media_type="video",
-        output_path=str(stamped_video_path),
-        custom_caption=clean_caption,
     )
 
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🚀 1-Tap Post Reel to Instagram", callback_data="post_insta"),
-        ]
-    ])
-
-    try:
-        await progress_msg.delete()
-    except Exception:
-        pass
-
-    with open(stamped_video_path, "rb") as vf:
-        await update.effective_message.reply_video(
-            video=vf,
-            caption=(
-                "⚡ *[ ARYAFEED ] Watermark Embedded!*\n\n"
-                "🏷️ **Brand:** `[ ARYAFEED ]` (Bottom Right)\n"
-                f"📝 **Caption:**\n_{clean_caption[:280]}..._\n\n"
-                "Tap below to publish reel live to `@aryafeed.in`:"
-            ),
-            reply_markup=keyboard,
-            parse_mode="Markdown",
-        )
+    # Required progress message
+    await update.effective_message.reply_text("Media received")
+    await update.effective_message.reply_text("Send the text you want on the reel")
 
 
 @restricted
 async def handle_document_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle uncompressed document uploads that are images or videos."""
+    """Handle document uploads that might be image or video files."""
     chat_id = update.effective_chat.id
     doc = update.effective_message.document
     if not doc or not doc.mime_type:
@@ -213,57 +155,41 @@ async def handle_document_media(update: Update, context: ContextTypes.DEFAULT_TY
         dest_path = config.input_dir / f"{chat_id}_{doc.file_unique_id}{ext}"
         await file.download_to_drive(custom_path=dest_path)
 
-        stamped_path = config.output_dir / f"stamped_{chat_id}_{doc.file_unique_id}.jpg"
-        try:
-            await asyncio.to_thread(stamp_image_watermark, dest_path, stamped_path, "ARYAFEED")
-        except Exception as e:
-            logger.exception(f"Failed to stamp image watermark: {e}")
-            stamped_path = dest_path
-
-        user_caption = update.effective_message.caption
-        if user_caption and len(user_caption.strip()) > 3:
-            clean_caption = user_caption.strip()
-            if "#aryafeed" not in clean_caption.lower():
-                clean_caption += "\n\n⚡ Follow @aryafeed.in for daily buzz & humor\n#aryafeed #trending #viral #memes #india"
-        else:
-            clean_caption = (
-                "⚡ Daily dose of viral stories, memes & thoughts!\n\n"
-                "👉 Follow @aryafeed.in for daily buzz 🔔\n"
-                "#aryafeed #viral #trending #reels #memes #explore #india"
-            )
+        # Set context so subsequent steps know user uploaded their own image
+        context.user_data["custom_media_path"] = str(dest_path)
+        context.user_data["chosen_img"] = "custom_upload"
+        cat = context.user_data.get("chosen_cat") or "romantic"
+        context.user_data["chosen_cat"] = cat
 
         await db_manager.start_reel_session(chat_id)
         await db_manager.update_session(
             chat_id,
-            current_step="READY_TO_POST",
+            current_step="WAITING_TEXT_SELECTION",
             media_path=str(dest_path),
             media_type="image",
-            output_path=str(stamped_path),
-            selected_template="news_banner",
-            custom_caption=clean_caption,
+            selected_template=cat,
         )
 
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("🚀 1-Tap Post to Instagram", callback_data="post_insta"),
-            ],
-            [
-                InlineKeyboardButton("🎬 Convert to 7s Animated Reel", callback_data="auto_render_custom_reel"),
-            ]
-        ])
+        from bot.handlers.auto import get_fresh_hook_options, build_hook_selection_keyboard, get_category_info
+        cat_info = get_category_info(cat)
+        fresh_hooks = await get_fresh_hook_options(chat_id, category=cat, limit=5)
+        context.user_data["current_hook_options"] = fresh_hooks
 
-        with open(stamped_path, "rb") as pf:
-            await update.effective_message.reply_photo(
-                photo=pf,
-                caption=(
-                    "⚡ *[ ARYAFEED ] Watermark Stamped!*\n\n"
-                    "🏷️ **Brand:** `[ ARYAFEED ]` (Bottom Right)\n"
-                    f"📝 **Caption:**\n_{clean_caption[:280]}..._\n\n"
-                    "Tap below to publish live to `@aryafeed.in`:"
-                ),
-                reply_markup=keyboard,
-                parse_mode="Markdown",
-            )
+        hooks_text = "\n".join([f"{idx}️⃣ _{h['text']}_" for idx, h in enumerate(fresh_hooks, start=1)])
+
+        msg = (
+            f"📸 *Custom Image Received & Loaded!*\n\n"
+            f"📂 *Vibe Style:* {cat_info['icon']} *{cat_info['title']}*\n\n"
+            f"Select 1 of 5 viral text quotes below, or type your own hook in chat:\n\n"
+            f"{hooks_text}\n\n"
+            f"_(💡 Next, an instant 1080x1920 preview with your photo + text will be shown!)_"
+        )
+
+        await update.effective_message.reply_text(
+            msg,
+            reply_markup=build_hook_selection_keyboard(fresh_hooks, category=cat),
+            parse_mode="Markdown",
+        )
 
     elif mime.startswith("video/"):
         max_bytes = config.max_video_size_mb * 1024 * 1024
@@ -273,64 +199,16 @@ async def handle_document_media(update: Update, context: ContextTypes.DEFAULT_TY
             )
             return
 
-        progress_msg = await update.effective_message.reply_text("⚡ *Downloading video document...*", parse_mode="Markdown")
-
         file = await doc.get_file()
         ext = Path(doc.file_name).suffix if doc.file_name else ".mp4"
         dest_path = config.input_dir / f"{chat_id}_{doc.file_unique_id}{ext}"
         await file.download_to_drive(custom_path=dest_path)
 
-        await progress_msg.edit_text("⚡ *Embedding [ ARYAFEED ] watermark into video...*", parse_mode="Markdown")
-
-        stamped_video_path = config.output_dir / f"stamped_{chat_id}_{doc.file_unique_id}.mp4"
-        try:
-            await asyncio.to_thread(stamp_video_watermark, dest_path, stamped_video_path, "ARYAFEED")
-        except Exception as e:
-            logger.exception(f"Video watermarking failed: {e}")
-            stamped_video_path = dest_path
-
-        user_caption = update.effective_message.caption
-        if user_caption and len(user_caption.strip()) > 3:
-            clean_caption = user_caption.strip()
-            if "#aryafeed" not in clean_caption.lower():
-                clean_caption += "\n\n⚡ Follow @aryafeed.in for daily buzz & humor\n#aryafeed #trending #viral #reels #india"
-        else:
-            clean_caption = (
-                "⚡ Daily dose of viral stories & reels!\n\n"
-                "👉 Follow @aryafeed.in for more 🔔\n"
-                "#aryafeed #viral #trending #reels #explore #india"
-            )
-
-        await db_manager.start_reel_session(chat_id)
         await db_manager.update_session(
             chat_id,
-            current_step="READY_TO_POST",
+            current_step="WAITING_TEXT",
             media_path=str(dest_path),
             media_type="video",
-            output_path=str(stamped_video_path),
-            custom_caption=clean_caption,
         )
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("🚀 1-Tap Post Reel to Instagram", callback_data="post_insta"),
-            ]
-        ])
-
-        try:
-            await progress_msg.delete()
-        except Exception:
-            pass
-
-        with open(stamped_video_path, "rb") as vf:
-            await update.effective_message.reply_video(
-                video=vf,
-                caption=(
-                    "⚡ *[ ARYAFEED ] Watermark Embedded!*\n\n"
-                    "🏷️ **Brand:** `[ ARYAFEED ]` (Bottom Right)\n"
-                    f"📝 **Caption:**\n_{clean_caption[:280]}..._\n\n"
-                    "Tap below to publish reel live to `@aryafeed.in`:"
-                ),
-                reply_markup=keyboard,
-                parse_mode="Markdown",
-            )
+        await update.effective_message.reply_text("Media received")
+        await update.effective_message.reply_text("Send the text you want on the reel")

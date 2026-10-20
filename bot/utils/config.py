@@ -64,8 +64,7 @@ class AppConfig:
         audio_dir = data_dir / "audio"
         output_dir = data_dir / "output"
         temp_dir = data_dir / "temp"
-        db_path = PROJECT_ROOT / "database" / "aryafeed_bot.db"
-
+        db_path = PROJECT_ROOT / "database" / "reel_bot.db"
 
         # Ensure directories exist
         for d in (input_dir, audio_dir, output_dir, temp_dir, db_path.parent):

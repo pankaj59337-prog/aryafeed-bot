@@ -117,59 +117,31 @@ class AudioSyncService:
 
         media_items = []
 
-        is_saved_audio = (
-            folder_id == "SAVED_AUDIO_COLLECTION"
-            or not folder_id
-            or (folder_name and folder_name.lower().strip() in ["audio", "audio (saved sounds 🎵)", "saved audio"])
-        )
-
-        if is_saved_audio:
-            logger.info(f"[AudioSync] Scanning Instagram Saved Audio feed (Saved -> Audio) for chat {chat_id}...")
-            try:
-                audio_resp = await asyncio.to_thread(cl.private_request, "feed/saved/audio/")
-                for it in audio_resp.get("items", []):
-                    snd = it.get("original_sound") or it.get("music_info", {}).get("music_asset_info") or it.get("track") or it
-                    audio_id = str(snd.get("audio_asset_id") or snd.get("id") or "")
-                    if not audio_id:
-                        continue
-                    title = snd.get("original_audio_title") or snd.get("title") or "Original Audio"
-                    ig = snd.get("ig_artist", {}) if isinstance(snd.get("ig_artist"), dict) else {}
-                    artist = ig.get("username") or ig.get("full_name") or snd.get("display_artist") or "Instagram Artist"
-                    audio_url = snd.get("progressive_download_url") or snd.get("fast_start_progressive_download_url")
-                    if audio_url:
-                        media_items.append({
-                            "source": "saved_audio",
-                            "audio_id": audio_id,
-                            "title": title,
-                            "artist": artist,
-                            "download_url": audio_url,
-                            "media_pk": audio_id,
-                        })
-                logger.info(f"[AudioSync] Found {len(media_items)} items in Saved -> Audio")
-            except Exception as e:
-                logger.warning(f"[AudioSync] Could not fetch saved audio feed: {e}")
-
-        elif folder_id and folder_id != "ALL_MEDIA_AUTO_COLLECTION":
-            logger.info(f"[AudioSync] Scanning specific collection '{folder_name}' (ID: {folder_id}) for chat {chat_id}...")
-            try:
-                col_medias = await asyncio.to_thread(cl.collection_medias, folder_id, 30)
-                for m in col_medias:
-                    media_items.append((f"folder:{folder_name}", m))
-                logger.info(f"[AudioSync] Found {len(col_medias)} items in folder '{folder_name}'")
-            except Exception as e:
-                logger.warning(f"[AudioSync] Could not fetch collection medias: {e}")
-        else:
-            # 1. Fetch from Saved Posts feed
-            logger.info(f"[AudioSync] Scanning all saved posts for chat {chat_id}...")
-            try:
-                saved_resp = await asyncio.to_thread(cl.private_request, "feed/saved/posts/")
-                for it in saved_resp.get("items", []):
-                    m = it.get("media")
-                    if m:
-                        media_items.append(("saved", m))
-                logger.info(f"[AudioSync] Found {len(saved_resp.get('items', []))} saved item(s)")
-            except Exception as e:
-                logger.warning(f"[AudioSync] Could not fetch saved posts: {e}")
+        # STRICT RULE: ONLY fetch from native Instagram Saved Audio (Saved -> Audio)
+        logger.info(f"[AudioSync] Scanning strictly native Instagram Saved Audio (Saved -> Audio) for chat {chat_id}...")
+        try:
+            audio_resp = await asyncio.to_thread(cl.private_request, "feed/saved/audio/")
+            for it in audio_resp.get("items", []):
+                snd = it.get("original_sound") or it.get("music_info", {}).get("music_asset_info") or it.get("track") or it
+                audio_id = str(snd.get("audio_asset_id") or snd.get("id") or "")
+                if not audio_id:
+                    continue
+                title = snd.get("original_audio_title") or snd.get("title") or "Original Audio"
+                ig = snd.get("ig_artist", {}) if isinstance(snd.get("ig_artist"), dict) else {}
+                artist = ig.get("username") or ig.get("full_name") or snd.get("display_artist") or "Instagram Artist"
+                audio_url = snd.get("progressive_download_url") or snd.get("fast_start_progressive_download_url")
+                if audio_url:
+                    media_items.append({
+                        "source": "saved_audio",
+                        "audio_id": audio_id,
+                        "title": title,
+                        "artist": artist,
+                        "download_url": audio_url,
+                        "media_pk": audio_id,
+                    })
+            logger.info(f"[AudioSync] Found {len(media_items)} items in Saved -> Audio")
+        except Exception as e:
+            logger.warning(f"[AudioSync] Could not fetch saved audio feed: {e}")
 
         newly_synced = []
 

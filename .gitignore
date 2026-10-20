@@ -22,11 +22,11 @@ data/temp/*
 database/*.db
 database/*.db-journal
 
-# Logs & Temp
+# Logs
 *.log
-crash.log
-*.pid
-temp/*
-!temp/.gitkeep
-test_*.txt
-*.vbs
+
+.venv/
+*.mp4
+data/temp/
+data/output/
+assets/music/archive_romantic/

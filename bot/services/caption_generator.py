@@ -71,7 +71,7 @@ STYLE_HASHTAGS = {
 
 def generate_instagram_caption(
     hook_text: str,
-    style: str = "news_banner",
+    style: str = "sexy",
     custom_tag_count: int = 12,
 ) -> str:
     """Generate an Instagram-ready caption complete with hook, teaser/debate CTA, and targeted hashtags."""
@@ -100,7 +100,7 @@ def generate_instagram_caption(
     teaser = random.choice(TEASERS)
     cta = random.choice(CTAS)
 
-    specific_tags = STYLE_HASHTAGS.get(style_key, STYLE_HASHTAGS["news_banner"])
+    specific_tags = STYLE_HASHTAGS.get(style_key, STYLE_HASHTAGS["sexy"])
     all_tags = list(set(GENERAL_HASHTAGS + specific_tags))
     random.shuffle(all_tags)
     selected_tags = all_tags[:custom_tag_count]
@@ -112,7 +112,7 @@ def generate_instagram_caption(
         teaser,
         "",
         f"• {cta}",
-        "• Follow @aryafeed.in for daily news & updates ⚡",
+        "• Follow for more unreleased daily reels 🖤",
         "",
         ".",
         ".",

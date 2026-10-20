@@ -337,83 +337,49 @@ async def insta_logout_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def handle_post_to_insta_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle inline button callback: post_insta or publish_reel."""
+    """Handle inline button callback: post_insta."""
     query = update.callback_query
     await query.answer()
 
     chat_id = update.effective_chat.id
     session = await db_manager.get_session(chat_id)
 
-    media_file: Optional[Path] = None
-    if session and session.get("output_path"):
-        cand = Path(session["output_path"])
-        if cand.exists():
-            media_file = cand
-
-    # Fallback: if not found on disk, extract directly from Telegram message!
-    is_image = False
-    if not media_file:
-        msg = query.message
-        if msg and msg.video:
-            try:
-                tg_file = await context.bot.get_file(msg.video.file_id)
-                media_file = config.temp_dir / f"tg_reel_{msg.message_id}.mp4"
-                await tg_file.download_to_drive(custom_path=media_file)
-                is_image = False
-            except Exception as dl_err:
-                logger.error(f"Failed to download video from TG message: {dl_err}")
-        elif msg and msg.photo:
-            try:
-                tg_file = await context.bot.get_file(msg.photo[-1].file_id)
-                media_file = config.temp_dir / f"tg_photo_{msg.message_id}.jpg"
-                await tg_file.download_to_drive(custom_path=media_file)
-                is_image = True
-            except Exception as dl_err:
-                logger.error(f"Failed to download photo from TG message: {dl_err}")
-
-    if not media_file or not media_file.exists():
+    if not session or not session.get("output_path"):
         await query.edit_message_reply_markup(reply_markup=None)
         await context.bot.send_message(
             chat_id=chat_id,
-            text="❌ No media file found to post. Generate a new reel or post first!"
+            text="❌ No recent reel found to post. Generate a new reel first!"
         )
         return
 
-    is_image = media_file.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")
-    hook_text = (session.get("overlay_text") if session else None) or "⚡ Daily dose of viral stories & memes @aryafeed.in"
-    style = (session.get("selected_template") if session else None) or "news_banner"
+    video_path = Path(session["output_path"])
+    if not video_path.exists():
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ Video file not found: {video_path.name}"
+        )
+        return
 
-    # Extract caption from telegram message if available, else session
-    caption = None
-    if query.message and query.message.caption:
-        cap_text = query.message.caption
-        import re
-        code_block = re.search(r"```(?:\w+)?\n?(.*?)```", cap_text, re.DOTALL)
-        if code_block:
-            caption = code_block.group(1).strip()
-    if not caption and session:
-        caption = session.get("custom_caption")
-    if not caption:
-        caption = generate_instagram_caption(hook_text, style=style)
+    hook_text = session.get("overlay_text") or "Late night thoughts 🌚💋"
+    style = session.get("selected_template") or "sexy"
+
+    # Generate viral caption & hashtags
+    caption = generate_instagram_caption(hook_text, style=style)
 
     await query.edit_message_reply_markup(reply_markup=None)
-    media_desc = "Photo" if is_image else "Reel"
     status_msg = await context.bot.send_message(
         chat_id=chat_id,
-        text=f"🚀 *Uploading {media_desc} to Instagram (@aryafeed.in)...* Please wait.",
+        text="🚀 *Uploading Reel to Instagram...* Please wait a moment.",
         parse_mode="Markdown"
     )
 
-    if is_image:
-        res = await instagram_service.upload_photo(chat_id, media_file, caption=caption)
-    else:
-        res = await instagram_service.upload_reel(chat_id, media_file, caption=caption)
+    res = await instagram_service.upload_reel(chat_id, video_path, caption=caption)
 
     if res.get("success"):
         post_url = res.get("url") or "Instagram Feed"
         await status_msg.edit_text(
-            f"🎉 *{media_desc} Successfully Published to Instagram!*\n\n"
-            f"🔗 [View Live on Instagram]({post_url})\n\n"
+            f"🎉 *Reel Successfully Published to Instagram!*\n\n"
+            f"🔗 [View Live Reel on Instagram]({post_url})\n\n"
             f"📝 **Caption Used:**\n```\n{caption}\n```",
             parse_mode="Markdown",
             disable_web_page_preview=False

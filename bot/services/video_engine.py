@@ -38,62 +38,28 @@ def run_ffmpeg_command(cmd: list) -> None:
 
 
 def prepare_base_image(image_path: Path, output_path: Path) -> Path:
-    """Prepare a crisp 1080x1920 base canvas using Pillow (instant, <10MB RAM)."""
-    from PIL import Image, ImageFilter, ImageDraw
+    """Prepare a 100% crisp 1080x1920 base canvas using Pillow with ZERO blur.
+    Always uses high-resolution Lanczos scaling and center/upper framing to perfectly fill 1080x1920.
+    """
+    from PIL import Image
     cw, ch = 1080, 1920
-    with Image.open(image_path) as raw:
-        raw = raw.convert("RGBA")
-        iw, ih = raw.size
-        aspect_img = iw / ih
+    with Image.open(image_path) as im:
+        im = im.convert("RGB")
+        im_w, im_h = im.size
+        # Scale image so it cleanly covers the entire 1080x1920 vertical canvas
+        scale = max(cw / im_w, ch / im_h)
+        new_w = max(cw, int(im_w * scale + 0.5))
+        new_h = max(ch, int(im_h * scale + 0.5))
+        resized = im.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-        # Background: blurred and darkened atmospheric version
-        bg = raw.resize((cw // 4, ch // 4), Image.Resampling.BOX)
-        bg = bg.filter(ImageFilter.GaussianBlur(12))
-        bg = bg.resize((cw, ch), Image.Resampling.BILINEAR)
-        dark_tint = Image.new("RGBA", (cw, ch), (8, 8, 12, 190))
-        bg = Image.alpha_composite(bg, dark_tint)
+        # Center crop horizontally; vertically focus upper-center (20-30% offset) where news faces/subjects reside
+        left = max(0, (new_w - cw) // 2)
+        top = int((new_h - ch) * 0.22) if new_h > ch else 0
+        top = max(0, min(top, new_h - ch))
 
-        if aspect_img > 1.15:  # Landscape editorial news photo (e.g. 16:9, 4:3)
-            # Scale to fit width 1080
-            target_w = cw
-            target_h = int(ih * (target_w / iw))
-            photo_y = 150
-            if target_h > 1000:
-                target_h = 1000
-                target_w = int(iw * (target_h / ih))
-                photo_x = (cw - target_w) // 2
-            else:
-                photo_x = 0
-
-            fg = raw.resize((target_w, target_h), Image.Resampling.LANCZOS)
-
-            # Smooth bottom fade mask so photo blends organically into dark lower canvas
-            fade_h = int(target_h * 0.25)
-            mask = Image.new("L", (target_w, target_h), 255)
-            mdraw = ImageDraw.Draw(mask)
-            for y in range(target_h - fade_h, target_h):
-                val = int(255 * (1.0 - (y - (target_h - fade_h)) / fade_h))
-                mdraw.line([(0, y), (target_w, y)], fill=val)
-            fg.putalpha(mask)
-            bg.paste(fg, (photo_x, photo_y), fg)
-
-            # Deep dark gradient in lower portion for crystal clear text readability
-            grad = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-            gdraw = ImageDraw.Draw(grad)
-            start_grad = photo_y + target_h - fade_h
-            for y in range(start_grad, ch):
-                f = min(1.0, (y - start_grad) / max(1, ch - start_grad))
-                gdraw.line([(0, y), (cw, y)], fill=(8, 8, 12, int(230 * f)))
-            bg = Image.alpha_composite(bg, grad)
-        else:
-            # Portrait or square: center fit
-            scale = min(cw / iw, ch / ih)
-            new_w, new_h = max(1, int(iw * scale)), max(1, int(ih * scale))
-            fg = raw.resize((new_w, new_h), Image.Resampling.LANCZOS)
-            bg.paste(fg, ((cw - new_w) // 2, (ch - new_h) // 2))
-
+        base = resized.crop((left, top, left + cw, top + ch))
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        bg.convert("RGB").save(output_path, "JPEG", quality=95)
+        base.save(output_path, "JPEG", quality=95)
     return output_path
 
 
@@ -124,11 +90,11 @@ def render_single_pass_image_reel(
     fade_out_st = max(0.0, duration - 1.5)
     fade_out_d = 1.5
 
-    # Ken Burns motion expression (subtle cinematic drift, smooth read pace)
+    # Ken Burns motion expression
     if template.ken_burns == "zoom_in":
-        zoom_expr = f"zoompan=z='min(1.0+0.00015*on,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={total_frames}:s=1080x1920:fps={fps}"
+        zoom_expr = f"zoompan=z='min(1.0+0.0004*on,1.12)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={total_frames}:s=1080x1920:fps={fps}"
     elif template.ken_burns == "zoom_out":
-        zoom_expr = f"zoompan=z='if(lte(zoom,1.0),1.08,max(1.001,zoom-0.00015*on))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={total_frames}:s=1080x1920:fps={fps}"
+        zoom_expr = f"zoompan=z='if(lte(zoom,1.0),1.12,max(1.001,zoom-0.0004*on))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={total_frames}:s=1080x1920:fps={fps}"
     else:
         zoom_expr = "format=yuv420p"
 
@@ -264,10 +230,10 @@ def add_music(
 
     if audio_path and audio_path.exists():
         if has_orig_audio:
-            # Duck background music under clear original speech (speech 1.0, bg music 0.18)
+            # Duck original audio and mix with background music
             filter_complex = (
-                f"[0:a]volume=1.0[orig];"
-                f"[1:a]volume=0.18,afade=t=in:st=0:d=1.0,afade=t=out:st={fade_out_st}:d=2.0[bg];"
+                f"[0:a]volume=0.3[orig];"
+                f"[1:a]volume=0.75,afade=t=in:st=0:d=2.0,afade=t=out:st={fade_out_st}:d=2.0[bg];"
                 f"[orig][bg]amix=inputs=2:duration=first:dropout_transition=2[a]"
             )
             cmd = [
@@ -442,160 +408,5 @@ def render_complete_reel(
         duration=duration,
         template=template,
     )
-
-    return output_path
-
-
-def stamp_image_watermark(
-    input_path: Path,
-    output_path: Path,
-    brand: str = "ARYAFEED",
-) -> Path:
-    """Stamp signature [ ARYAFEED ] yellow pill watermark at bottom-right of an image.
-    Preserves original aspect ratio and resolution (meme cards, photos, infographics).
-    """
-    from PIL import Image, ImageDraw
-    from bot.services.text_overlay import load_font
-
-    with Image.open(input_path) as im:
-        if im.mode != "RGB":
-            im = im.convert("RGB")
-        w, h = im.size
-
-        # Dynamically scale font & pill proportional to image width
-        scale = max(0.5, min(2.5, w / 1080.0))
-        badge_font_size = int(32 * scale)
-        badge_font = load_font(config.font_path, badge_font_size)
-
-        draw = ImageDraw.Draw(im)
-        badge_text = brand.upper().strip()
-        bbox = draw.textbbox((0, 0), badge_text, font=badge_font)
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-
-        pad_x = int(22 * scale)
-        pad_y = int(9 * scale)
-        badge_w = tw + (pad_x * 2)
-        badge_h = th + (pad_y * 2)
-        radius = int(12 * scale)
-
-        margin_right = int(32 * scale)
-        margin_bottom = int(32 * scale)
-        badge_x = w - margin_right - badge_w
-        badge_y = h - margin_bottom - badge_h
-
-        # 1. Soft shadow
-        draw.rounded_rectangle(
-            (badge_x - 1, badge_y + 2, badge_x + badge_w + 1, badge_y + badge_h + 3),
-            radius=radius,
-            fill=(0, 0, 0, 160),
-        )
-        # 2. Signature yellow pill (255, 220, 0)
-        draw.rounded_rectangle(
-            (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
-            radius=radius,
-            fill=(255, 220, 0),
-        )
-        # 3. High-contrast bold black text
-        text_x = badge_x + pad_x - bbox[0]
-        text_y = badge_y + pad_y - bbox[1]
-        draw.text((text_x, text_y), badge_text, font=badge_font, fill=(10, 10, 10))
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        im.save(output_path, "JPEG", quality=95)
-        return output_path
-
-
-def stamp_video_watermark(
-    video_path: Path,
-    output_path: Path,
-    brand: str = "ARYAFEED",
-) -> Path:
-    """Stamp signature [ ARYAFEED ] yellow pill watermark at bottom-right of a video.
-    Encodes ultrafast with libx264 while copying audio stream directly.
-    """
-    import json
-    from PIL import Image, ImageDraw
-    from bot.services.text_overlay import load_font
-
-    # Probe video dimensions using ffprobe
-    probe_cmd = [
-        "ffprobe", "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height",
-        "-of", "json",
-        str(video_path),
-    ]
-    try:
-        res = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
-        probe_data = json.loads(res.stdout)
-        width = int(probe_data["streams"][0]["width"])
-        height = int(probe_data["streams"][0]["height"])
-    except Exception:
-        width, height = 1080, 1920
-
-    scale = max(0.5, min(2.5, width / 1080.0))
-    badge_font_size = int(32 * scale)
-    badge_font = load_font(config.font_path, badge_font_size)
-
-    overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-
-    badge_text = brand.upper().strip()
-    bbox = draw.textbbox((0, 0), badge_text, font=badge_font)
-    tw = bbox[2] - bbox[0]
-    th = bbox[3] - bbox[1]
-
-    pad_x = int(22 * scale)
-    pad_y = int(9 * scale)
-    badge_w = tw + (pad_x * 2)
-    badge_h = th + (pad_y * 2)
-    radius = int(12 * scale)
-
-    # Positioned above bottom Instagram UI (~140px on 1920h)
-    margin_right = int(36 * scale)
-    margin_bottom = int(140 * scale) if height > width else int(36 * scale)
-    badge_x = width - margin_right - badge_w
-    badge_y = height - margin_bottom - badge_h
-
-    draw.rounded_rectangle(
-        (badge_x - 1, badge_y + 2, badge_x + badge_w + 1, badge_y + badge_h + 3),
-        radius=radius,
-        fill=(0, 0, 0, 160),
-    )
-    draw.rounded_rectangle(
-        (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
-        radius=radius,
-        fill=(255, 220, 0, 255),
-    )
-    text_x = badge_x + pad_x - bbox[0]
-    text_y = badge_y + pad_y - bbox[1]
-    draw.text((text_x, text_y), badge_text, font=badge_font, fill=(10, 10, 10, 255))
-
-    overlay_path = output_path.parent / f"{output_path.stem}_watermark.png"
-    overlay.save(overlay_path, "PNG")
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(video_path),
-        "-i", str(overlay_path),
-        "-filter_complex", "[0:v][1:v]overlay=0:0[v]",
-        "-map", "[v]",
-        "-map", "0:a?",
-        "-c:v", "libx264",
-        "-preset", "ultrafast",
-        "-crf", "22",
-        "-c:a", "copy",
-        "-movflags", "+faststart",
-        str(output_path),
-    ]
-    run_ffmpeg_command(cmd)
-
-    try:
-        overlay_path.unlink()
-    except Exception:
-        pass
 
     return output_path

@@ -172,60 +172,6 @@ VOCAL_TRACKS: List[Dict[str, Any]] = [
         "icon": "🥀",
         "style_affinity": ["romantic", "broken", "cinematic", "sexy", "quote"],
     },
-    {
-        "id": "aarambh",
-        "file": "aarambh_slow_normal.mp3",
-        "title": "Aarambh Hai Prachand",
-        "artist": "Piyush Mishra",
-        "lyrics": "Aarambh hai prachand bole mastako ke jhund...",
-        "icon": "⚔️",
-        "style_affinity": ["news_banner", "news", "cinematic", "motivational", "cricket", "protest"],
-    },
-    {
-        "id": "arjan_vailly",
-        "file": "arjan_vailly_vocal.mp3",
-        "title": "Arjan Vailly",
-        "artist": "Bhupinder Babbal",
-        "lyrics": "Arjan vailly ne pair jodke gandasi maari...",
-        "icon": "⚡",
-        "style_affinity": ["news_banner", "news", "action", "protest", "aggressive", "motivational"],
-    },
-    {
-        "id": "ghamand_kar",
-        "file": "ghamand_kar_vocal.mp3",
-        "title": "Ghamand Kar",
-        "artist": "Sachet Tandon",
-        "lyrics": "Ghamand kar, prachand kar, tandav sa yudh kar...",
-        "icon": "🔥",
-        "style_affinity": ["news_banner", "news", "cinematic", "protest", "motivational"],
-    },
-    {
-        "id": "sidhu_295",
-        "file": "sidhu_295_vocal.mp3",
-        "title": "295",
-        "artist": "Sidhu Moosewala",
-        "lyrics": "Dass kithe keda ethe dharmi reha...",
-        "icon": "🎙️",
-        "style_affinity": ["news_banner", "news", "political", "protest", "motivational"],
-    },
-    {
-        "id": "kgf_toofan",
-        "file": "kgf_toofan_vocal.mp3",
-        "title": "Toofan KGF 2",
-        "artist": "Ravi Basrur",
-        "lyrics": "Toofan jo aayega dushman tharayega...",
-        "icon": "🌪️",
-        "style_affinity": ["news_banner", "news", "action", "cinematic", "motivational"],
-    },
-    {
-        "id": "shubh_cheques",
-        "file": "shubh_cheques_vocal.mp3",
-        "title": "Cheques",
-        "artist": "Shubh",
-        "lyrics": "Yeah, cheques in the bank, gallan sab khariyaan...",
-        "icon": "💰",
-        "style_affinity": ["news_banner", "trending", "attitude", "cinematic"],
-    },
 ]
 
 TRACK_METADATA: Dict[str, Dict[str, Any]] = {
@@ -485,6 +431,33 @@ class MusicService:
             .title()
         )
         return f"{clean} (Vocal Lyrics)"
+
+
+    def get_aryafeed_news_track(self, topic: Optional[str] = None) -> Optional[Path]:
+        """Select an authentic News, Aura/Phonk, or National track for @aryafeed.in (ZERO romantic!)."""
+        topic_lower = (topic or "").lower()
+
+        # 1. National / Space / Army / Sports / India Pride
+        if any(w in topic_lower for w in ["isro", "chandrayaan", "army", "soldier", "india", "marathon", "gold", "nation", "bullet train", "surat"]):
+            pool = list(Path("assets/music/national").glob("*.mp3"))
+            if pool:
+                return random.choice(pool)
+
+        # 2. Breaking News / Court / CEC / Politics / Crime
+        if any(w in topic_lower for w in ["court", "cec", "protest", "supreme", "scam", "police", "arrest", "petition", "rift", "congress", "dmk", "tvk"]):
+            pool = list(Path("assets/music/news").glob("*.mp3"))
+            if pool:
+                return random.choice(pool)
+
+        # 3. Aura / Phonk / Youth / Tech / Record
+        if any(w in topic_lower for w in ["selena", "fund", "million", "youth", "ai", "robot", "record", "inspiration"]):
+            pool = list(Path("assets/music/aura").glob("*.mp3"))
+            if pool:
+                return random.choice(pool)
+
+        # General mix across News, Aura, and National
+        combined = list(Path("assets/music/news").glob("*.mp3")) + list(Path("assets/music/aura").glob("*.mp3")) + list(Path("assets/music/national").glob("*.mp3"))
+        return random.choice(combined) if combined else None
 
 
 music_service = MusicService()

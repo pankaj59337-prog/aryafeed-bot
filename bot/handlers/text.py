@@ -66,8 +66,8 @@ async def handle_overlay_text(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not handled and update.effective_message:
             await update.effective_message.reply_text(
                 "💡 *Quick Tip:*\n"
-                "• Send /auto or /reel to open the AryaFeed News Reel Studio!\n"
-                "• Type `news`, `banner`, or `card` anytime to begin.",
+                "• Send /reel to choose style and generate a new reel!\n"
+                "• Type `sexy`, `romantic`, or `reel` anytime to begin.",
                 parse_mode="Markdown",
             )
         return

@@ -30,23 +30,25 @@ def restricted(func: Callable):
 
 @restricted
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /start command - welcome user to AryaFeed Engine."""
+    """Handle /start command - welcome user and explain bot usage."""
     welcome_msg = (
-        "⚡ *Welcome to AryaFeed Engine \\(@aryafeed\\.in\\)\\!*\n\n"
-        "I create high\\-retention, vertical *9:16 News & Curiosity Reels* "
-        "autonomously with AI or from your breaking headlines\\.\n\n"
-        "📰 *AryaFeed Signature Features:*\n"
-        "• Yellow brand pill watermark `[ ARYAFEED.IN ]`\n"
-        "• Source citation badge support `[Per Source]`\n"
-        "• High\\-contrast news banner and dark scrim card styles\n"
-        "• Viral debate captions & niche hashtag engine\n\n"
-        "⚡ *Quick Commands:*\n"
-        "• `/auto` \\- One\\-tap viral news & studio reel generator\n"
-        "• `/reel` \\- Manual reel creator \\(photo/video \\+ headline \\+ music\\)\n"
-        "• `/templates` \\- Browse styles \\(AryaFeed News ⚡ / Card 📰\\)\n"
-        "• `/status` \\- Check active render job\n"
-        "• `/account` \\- Check active publishing account\n"
-        "• `/help` \\- Full command manual"
+        "🎬 *Welcome to the Telegram Reel Maker Bot\\!*\n\n"
+        "I create high\\-quality, vertical *9:16 Instagram Reels* \\(1080x1920\\) "
+        "autonomously with AI or from your own media\\.\n\n"
+        "🤖 *AI Autonomous Mode \\(Self\\-Creation\\):*\n"
+        "• Just send the word `image` or `video`\n"
+        "• Or use `/auto` \\(or `/auto sexy`, `/auto meme`\\)\n"
+        "• I will automatically write viral hooks, generate AI visuals, and render the complete reel\\!\n\n"
+        "🎨 *Manual Upload Mode:*\n"
+        "• Type /reel to upload your own photo/video, custom text, and music\\.\n\n"
+        "⚡ *Commands:*\n"
+        "• `/auto` \\- One\\-tap AI autonomous creator\n"
+        "• `/account` \\- Switch between @night\\_thought\\_12 and @aryafeed\\.in\n"
+        "• `/reel` \\- Manual reel creator\n"
+        "• `/templates` \\- Browse all styles \\(including AryaFeed News ⚡\\)\n"
+        "• `/status` \\- Check active job\n"
+        "• `/cancel` \\- Discard active job\n"
+        "• `/help` \\- Full guide"
     )
     if update.effective_message:
         await update.effective_message.reply_text(welcome_msg, parse_mode="MarkdownV2")
@@ -139,7 +141,7 @@ async def sync_music_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     status_msg = None
     if update.effective_message:
         status_msg = await update.effective_message.reply_text(
-            "🔄 *Scanning your Instagram Saved & Liked Reels for trending audio...*\nPlease wait a moment.",
+            "🔄 *Scanning your Instagram Saved Audio (Saved -> Audio)...*\nPlease wait a moment.",
             parse_mode="Markdown",
         )
 
@@ -150,7 +152,7 @@ async def sync_music_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         synced = await audio_sync_service.sync_from_instagram(chat_id)
 
         if synced:
-            lines = [f"🎵 *Synced {len(synced)} New Trending Song(s) from Instagram!*\n"]
+            lines = [f"🎵 *Synced {len(synced)} New Trending Song(s) from Saved Audio!*\n"]
             for s in synced:
                 lines.append(f"• *{s['title']}* — _{s['artist']}_")
             lines.append(f"\n🎧 *Total Active Playlist Size:* {len(VOCAL_TRACKS)} tracks")
@@ -160,8 +162,8 @@ async def sync_music_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             text = (
                 f"✅ *Audio Library is Up to Date!*\n\n"
                 f"• Active Tracks in Playlist: *{len(VOCAL_TRACKS)}*\n"
-                f"• No new unsynced saved/liked reels found.\n\n"
-                f"💡 _Tip: Like (❤️) or Save (🔖) any reel on Instagram while scrolling, then run /sync_music!_"
+                f"• No new unsynced audio found in Saved -> Audio.\n\n"
+                f"💡 _Tip: Instagram par kisi reel ka sound 'Save Audio' karo, fir /sync_music chalao!_"
             )
 
         if status_msg:
@@ -281,74 +283,4 @@ async def handle_sync_folder_callback(update: Update, context: ContextTypes.DEFA
         f"_Tip: Try saving 1-2 reels into this folder, then type /sync_music!_",
         parse_mode="Markdown"
     )
-
-
-@restricted
-async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Fetch latest breaking news, render 1080x1920 reel with [ ARYAFEED ], and deliver/post."""
-    chat_id = update.effective_chat.id
-    msg = await update.effective_message.reply_text("⚡ *Scanning breaking Indian news feeds...*", parse_mode="Markdown")
-
-    from bot.services.live_news_service import live_news_service
-    try:
-        args = context.args or []
-        should_post = "post" in [a.lower() for a in args] or False
-
-        await msg.edit_text("📰 *Found breaking story! Rendering 1080x1920 ARYAFEED Reel...*", parse_mode="Markdown")
-
-        res = await live_news_service.create_and_publish_news_reel(
-            chat_id=chat_id,
-            auto_post=should_post,
-            bot=context.bot,
-        )
-
-        if not res.get("success"):
-            await msg.edit_text(f"⚠️ *News Reel Error:* {res.get('error')}", parse_mode="Markdown")
-            return
-
-        try:
-            await msg.delete()
-        except Exception:
-            pass
-    except Exception as e:
-        logger.exception(f"Error in news_command: {e}")
-        await msg.edit_text(f"⚠️ *Error generating news reel:* {e}", parse_mode="Markdown")
-
-
-@restricted
-async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Manually trigger competitor accounts scan and rebrand."""
-    chat_id = update.effective_chat.id
-    msg = await update.effective_message.reply_text(
-        "⚡ *Scanning 4 competitor accounts...*\n\n"
-        "• `@rvcjinsta`\n"
-        "• `@flirting.lines`\n"
-        "• `@comedyculture.in`\n"
-        "• `@adultsociety`\n\n"
-        "_Checking for fresh clean vs branded posts..._",
-        parse_mode="Markdown"
-    )
-
-    from bot.services.competitor_monitor import competitor_monitor_service
-    try:
-        results = await competitor_monitor_service.scan_and_rebrand_competitors(
-            chat_id=chat_id,
-            bot=context.bot,
-        )
-        if not results:
-            await msg.edit_text(
-                "✅ *Scan Complete!*\n\n"
-                "No new unposted media found from the 4 accounts right now, or Instagram session requires /insta_login.\n\n"
-                "_All previous posts are tracked in database._",
-                parse_mode="Markdown"
-            )
-        else:
-            await msg.edit_text(
-                f"🎉 *Scan Complete!* Processed {len(results)} fresh posts from competitor feeds!",
-                parse_mode="Markdown"
-            )
-    except Exception as e:
-        logger.exception(f"Error in scout_command: {e}")
-        await msg.edit_text(f"⚠️ *Scout Error:* {e}", parse_mode="Markdown")
-
 
