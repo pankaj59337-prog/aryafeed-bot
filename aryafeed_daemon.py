@@ -137,6 +137,30 @@ NEWS_DATABASE = [
         "category": "news",
         "details": "Major regional political development as newly formed party structure outlines extensive educational and youth unemployment outreach.",
     },
+    {
+        "id": "iit_study_1",
+        "image": "assets/images/categories/news/news_iit_study.jpg",
+        "hook": "DAILY-WAGE WORKER'S SON CRACKS *IIT-JEE* WITH TOP AIR RANK WITHOUT COACHING 📚🇮🇳",
+        "clean": "Son of a daily-wage laborer secures top rank in IIT-JEE entrance exam through pure self-study",
+        "category": "national",
+        "details": "Inspirational youth milestone as village student overcomes extreme poverty and study challenges, securing full scholarship at IIT Bombay.",
+    },
+    {
+        "id": "delivery_hero_1",
+        "image": "assets/images/categories/news/news_delivery_hero.jpg",
+        "hook": "BRAVE DELIVERY RIDER EVACUATES *8 FAMILIES* DURING MIDNIGHT BUILDING FIRE 🚨🔥",
+        "clean": "Delivery rider saves 8 families after spotting midnight building fire before fire trucks arrive",
+        "category": "aura",
+        "details": "Civic bravery honored as late-night delivery partner notices smoke billowing from residential apartments and rings alarms to evacuate residents safely.",
+    },
+    {
+        "id": "dadi_stall_1",
+        "image": "assets/images/categories/news/news_dadi_food_stall.jpg",
+        "hook": "82-YEAR-OLD DADI SERVES *₹10 WHOLESOME MEALS* TO 500+ NEEDY DAILY 🍲❤️",
+        "clean": "82-year-old grandmother serves wholesome ₹10 meals to over 500 needy people every day",
+        "category": "national",
+        "details": "Heartwarming grassroots charity in Uttar Pradesh where loving elderly woman feeds students and daily laborers unlimited nutritious food with dignity.",
+    },
 ]
 
 
